@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>오목</title>
+  <title>오목 · 바둑 · 장기</title>
   <style>
     /* 순수 흑백(#FFFFFF, #000000) 미니멀 스타일 */
     * {
@@ -17,7 +17,7 @@
       min-height: 100vh;
       background-color: #ffffff;
       color: #000000;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Serif KR", serif;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -25,7 +25,7 @@
       padding: 20px;
     }
 
-    /* 상단 컨트롤 바: 오직 요청된 4가지 요소만 배치 */
+    /* 상단 컨트롤 바: 게임 선택, 크기(px), 난이도, 진영 선택, 시작/재시작, (필요 시) 패스 */
     .controls {
       display: flex;
       flex-wrap: wrap;
@@ -41,6 +41,7 @@
       gap: 6px;
       font-size: 14px;
       color: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     input[type="number"],
@@ -54,15 +55,11 @@
       outline: none;
       border-radius: 0;
       height: 34px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     input[type="number"] {
-      width: 96px;
-    }
-
-    input[type="number"]::placeholder {
-      color: #000000;
-      opacity: 0.45;
+      width: 92px;
     }
 
     select {
@@ -72,7 +69,7 @@
     button {
       cursor: pointer;
       font-weight: 600;
-      padding: 6px 16px;
+      padding: 6px 14px;
       transition: background-color 0.1s, color 0.1s;
     }
 
@@ -86,18 +83,48 @@
       color: #ffffff;
     }
 
-    /* 1:1 비율의 바둑판 캔버스 */
+    .hidden {
+      display: none !important;
+    }
+
+    /* 1:1 비율 캔버스 래퍼 */
+    .board-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
     #board {
       display: block;
       background-color: #ffffff;
       cursor: pointer;
       touch-action: manipulation;
     }
+
+    /* 종국 결과 최소 흑백 오버레이 박스 */
+    #resultOverlay {
+      position: absolute;
+      background-color: #ffffff;
+      color: #000000;
+      border: 2px solid #000000;
+      padding: 12px 22px;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
   </style>
 </head>
 <body>
-  <!-- 바둑판 크기(px), AI 난이도, 돌 선택, 시작/재시작 버튼 -->
   <div class="controls">
+    <select id="gameSelect" aria-label="게임 선택">
+      <option value="omok">오목</option>
+      <option value="go">바둑</option>
+      <option value="janggi">장기</option>
+    </select>
+
     <label class="field" for="boardSizeInput">
       <span>크기(px)</span>
       <input
@@ -109,6 +136,7 @@
         aria-label="크기(px)"
       />
     </label>
+
     <label class="field" for="aiSkillInput">
       <span>난이도</span>
       <input
@@ -120,42 +148,104 @@
         aria-label="난이도"
       />
     </label>
-    <select id="stoneColorSelect" aria-label="돌 선택">
+
+    <select id="sideSelect" aria-label="진영 선택">
       <option value="1">● 흑</option>
       <option value="2">○ 백</option>
     </select>
+
+    <button id="passBtn" type="button" class="hidden">패스</button>
     <button id="startBtn" type="button">시작 / 재시작</button>
   </div>
 
-  <canvas id="board"></canvas>
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+    <div id="resultOverlay" class="hidden"></div>
+  </div>
 
   <script>
     (() => {
-      const GRID_COUNT = 19; // 가로세로 19줄
+      // 공통 상수 (1: 흑/초 선공, 2: 백/한 후공)
       const EMPTY = 0;
-      const BLACK = 1;
-      const WHITE = 2;
+      const SIDE_1 = 1; // 오목/바둑: 흑, 장기: 초 (선공)
+      const SIDE_2 = 2; // 오목/바둑: 백, 장기: 한 (후공)
 
       const canvas = document.getElementById("board");
       const ctx = canvas.getContext("2d");
 
+      const gameSelect = document.getElementById("gameSelect");
       const boardSizeInput = document.getElementById("boardSizeInput");
       const aiSkillInput = document.getElementById("aiSkillInput");
-      const stoneColorSelect = document.getElementById("stoneColorSelect");
+      const sideSelect = document.getElementById("sideSelect");
+      const passBtn = document.getElementById("passBtn");
       const startBtn = document.getElementById("startBtn");
+      const resultOverlay = document.getElementById("resultOverlay");
 
-      let board = Array.from({ length: GRID_COUNT }, () => Array(GRID_COUNT).fill(EMPTY));
+      // 전역 상태
+      let currentGame = "omok"; // 'omok' | 'go' | 'janggi'
       let boardPixelSize = 500;
-      let playerColor = BLACK;
-      let aiColor = WHITE;
-      let currentTurn = BLACK;
+      let playerSide = SIDE_1;
+      let aiSide = SIDE_2;
+      let currentTurn = SIDE_1;
       let gameOver = false;
       let isAiThinking = false;
-      let winningLine = [];
-      let hoverPos = null;
       let aiTimer = null;
+      let hoverPos = null;
 
-      // 사용자 입력에 따른 바둑판 픽셀 크기 적용 (소수점 지원, 크기 제한 없음)
+      // 오목·바둑 상태 (19x19)
+      const GO_SIZE = 19;
+      let grid19 = [];
+      let omokWinLine = [];
+
+      // 바둑 전용 상태
+      let goPrevBoardHash = "";
+      let goConsecutivePasses = 0;
+      let goCapturedBy1 = 0; // 흑이 따낸 백돌 수
+      let goCapturedBy2 = 0; // 백이 따낸 흑돌 수
+      let goLastMove = null;
+
+      // 장기 전용 상태 (10행 x 9열)
+      const JG_ROWS = 10;
+      const JG_COLS = 9;
+      let jgBoard = []; // null 또는 { side: 1|2, type: 'K'|'R'|'C'|'H'|'E'|'A'|'P' }
+      let jgSelected = null; // { r, c }
+      let jgValidMoves = []; // [{ r, c }]
+      let jgConsecutivePasses = 0;
+      let jgLastMove = null; // { from: {r,c}, to: {r,c} }
+
+      // 진영 셀렉트 박스 라벨 갱신
+      function updateSideLabels() {
+        const prevVal = sideSelect.value;
+        if (currentGame === "janggi") {
+          sideSelect.options[0].text = "楚 초";
+          sideSelect.options[1].text = "漢 한";
+          passBtn.textContent = "한 수 쉼";
+          passBtn.classList.remove("hidden");
+        } else if (currentGame === "go") {
+          sideSelect.options[0].text = "● 흑";
+          sideSelect.options[1].text = "○ 백";
+          passBtn.textContent = "패스";
+          passBtn.classList.remove("hidden");
+        } else {
+          sideSelect.options[0].text = "● 흑";
+          sideSelect.options[1].text = "○ 백";
+          passBtn.classList.add("hidden");
+        }
+        sideSelect.value = prevVal;
+      }
+
+      // 결과 오버레이 표시/숨김
+      function showResult(text) {
+        if (!text) {
+          resultOverlay.classList.add("hidden");
+          resultOverlay.textContent = "";
+        } else {
+          resultOverlay.textContent = text;
+          resultOverlay.classList.remove("hidden");
+        }
+      }
+
+      // 캔버스 크기 적용 (소수점 지원, 크기 제한 없음, 1:1 비율 유지)
       function applyBoardSize() {
         const raw = parseFloat(boardSizeInput.value);
         if (!Number.isNaN(raw) && raw > 0) {
@@ -167,28 +257,34 @@
         canvas.width = Math.max(1, Math.round(boardPixelSize * dpr));
         canvas.height = Math.max(1, Math.round(boardPixelSize * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        drawBoard();
+        render();
       }
 
-      // 바둑판 및 돌 렌더링 (오직 #FFFFFF와 #000000만 사용)
-      function drawBoard() {
+      // ==================== 렌더링 (순수 #FFFFFF & #000000) ====================
+
+      function render() {
         const size = boardPixelSize;
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, size, size);
-
         if (size <= 0) return;
 
-        // 19줄 격자 여백 및 간격 계산
-        const padding = size / (GRID_COUNT + 1);
-        const step = (size - padding * 2) / (GRID_COUNT - 1);
+        if (currentGame === "janggi") {
+          renderJanggi(size);
+        } else {
+          renderGrid19(size);
+        }
+      }
+
+      // 19x19 바둑판(오목/바둑) 렌더링
+      function renderGrid19(size) {
+        const padding = size / (GO_SIZE + 1);
+        const step = (size - padding * 2) / (GO_SIZE - 1);
 
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = Math.max(1, size / 540);
 
-        // 가로/세로 19줄 그리기
-        for (let i = 0; i < GRID_COUNT; i++) {
+        for (let i = 0; i < GO_SIZE; i++) {
           const pos = padding + i * step;
-
           ctx.beginPath();
           ctx.moveTo(padding, pos);
           ctx.lineTo(size - padding, pos);
@@ -200,34 +296,31 @@
           ctx.stroke();
         }
 
-        // 19줄 바둑판 표준 화점 9개
-        const starCoords = [3, 9, 15];
-        const starRadius = Math.max(2, step * 0.11);
+        // 화점 9개
+        const stars = [3, 9, 15];
+        const starR = Math.max(2, step * 0.11);
         ctx.fillStyle = "#000000";
-        for (const r of starCoords) {
-          for (const c of starCoords) {
-            const cx = padding + c * step;
-            const cy = padding + r * step;
+        for (const r of stars) {
+          for (const c of stars) {
             ctx.beginPath();
-            ctx.arc(cx, cy, starRadius, 0, Math.PI * 2);
+            ctx.arc(padding + c * step, padding + r * step, starR, 0, Math.PI * 2);
             ctx.fill();
           }
         }
 
-        // 착수된 돌 그리기
-        const stoneRadius = step * 0.44;
-        for (let r = 0; r < GRID_COUNT; r++) {
-          for (let c = 0; c < GRID_COUNT; c++) {
-            const cell = board[r][c];
+        // 착수된 돌
+        const stoneR = step * 0.44;
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            const cell = grid19[r][c];
             if (cell === EMPTY) continue;
 
             const cx = padding + c * step;
             const cy = padding + r * step;
 
             ctx.beginPath();
-            ctx.arc(cx, cy, stoneRadius, 0, Math.PI * 2);
-
-            if (cell === BLACK) {
+            ctx.arc(cx, cy, stoneR, 0, Math.PI * 2);
+            if (cell === SIDE_1) {
               ctx.fillStyle = "#000000";
               ctx.fill();
             } else {
@@ -240,27 +333,40 @@
           }
         }
 
-        // 승리한 5목 라인에 순수 흑백 대비 점 표시
-        if (winningLine.length > 0) {
-          const markRadius = Math.max(2, stoneRadius * 0.24);
-          for (const [r, c] of winningLine) {
+        // 바둑 마지막 수 표식
+        if (currentGame === "go" && goLastMove) {
+          const { r, c } = goLastMove;
+          if (grid19[r][c] !== EMPTY) {
             const cx = padding + c * step;
             const cy = padding + r * step;
             ctx.beginPath();
-            ctx.arc(cx, cy, markRadius, 0, Math.PI * 2);
-            ctx.fillStyle = board[r][c] === BLACK ? "#ffffff" : "#000000";
+            ctx.arc(cx, cy, stoneR * 0.25, 0, Math.PI * 2);
+            ctx.fillStyle = grid19[r][c] === SIDE_1 ? "#ffffff" : "#000000";
             ctx.fill();
           }
         }
 
-        // 마우스 호버 시 착수 위치 가이드 (흑백 외곽선)
-        if (!gameOver && !isAiThinking && currentTurn === playerColor && hoverPos) {
-          const { r, c } = hoverPos;
-          if (r >= 0 && r < GRID_COUNT && c >= 0 && c < GRID_COUNT && board[r][c] === EMPTY) {
+        // 오목 승리 라인 표식
+        if (currentGame === "omok" && omokWinLine.length > 0) {
+          const markR = Math.max(2, stoneR * 0.24);
+          for (const [r, c] of omokWinLine) {
             const cx = padding + c * step;
             const cy = padding + r * step;
             ctx.beginPath();
-            ctx.arc(cx, cy, stoneRadius * 0.88, 0, Math.PI * 2);
+            ctx.arc(cx, cy, markR, 0, Math.PI * 2);
+            ctx.fillStyle = grid19[r][c] === SIDE_1 ? "#ffffff" : "#000000";
+            ctx.fill();
+          }
+        }
+
+        // 호버 위치 가이드
+        if (!gameOver && !isAiThinking && currentTurn === playerSide && hoverPos) {
+          const { r, c } = hoverPos;
+          if (r >= 0 && r < GO_SIZE && c >= 0 && c < GO_SIZE && grid19[r][c] === EMPTY) {
+            const cx = padding + c * step;
+            const cy = padding + r * step;
+            ctx.beginPath();
+            ctx.arc(cx, cy, stoneR * 0.86, 0, Math.PI * 2);
             ctx.lineWidth = 1;
             ctx.strokeStyle = "#000000";
             ctx.stroke();
@@ -268,8 +374,193 @@
         }
       }
 
-      // 캔버스 좌표를 19x19 교차점 인덱스로 변환
-      function getGridCoordFromEvent(e) {
+      // 장기판 좌표 계산 헬퍼 (1:1 정사각형 캔버스 내에 9x10 비율 격자를 중앙 정렬)
+      function getJanggiMetrics(size) {
+        const padY = size * 0.07;
+        const step = (size - padY * 2) / (JG_ROWS - 1);
+        const boardW = step * (JG_COLS - 1);
+        const padX = (size - boardW) / 2;
+        return { padX, padY, step };
+      }
+
+      // 장기판 및 기물 렌더링 (순수 흑백)
+      function renderJanggi(size) {
+        const { padX, padY, step } = getJanggiMetrics(size);
+
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = Math.max(1.1, size / 480);
+
+        // 가로 10줄
+        for (let r = 0; r < JG_ROWS; r++) {
+          const y = padY + r * step;
+          ctx.beginPath();
+          ctx.moveTo(padX, y);
+          ctx.lineTo(padX + step * (JG_COLS - 1), y);
+          ctx.stroke();
+        }
+
+        // 세로 9줄
+        for (let c = 0; c < JG_COLS; c++) {
+          const x = padX + c * step;
+          ctx.beginPath();
+          ctx.moveTo(x, padY);
+          ctx.lineTo(x, padY + step * (JG_ROWS - 1));
+          ctx.stroke();
+        }
+
+        // 외곽 테두리 강조
+        ctx.lineWidth = Math.max(1.8, size / 280);
+        ctx.strokeRect(padX, padY, step * (JG_COLS - 1), step * (JG_ROWS - 1));
+
+        // 상단 궁성 대각선 (행 0~2, 열 3~5) & 하단 궁성 대각선 (행 7~9, 열 3~5)
+        ctx.lineWidth = Math.max(1.1, size / 480);
+        const palaces = [0, 7];
+        for (const r0 of palaces) {
+          const x1 = padX + 3 * step;
+          const y1 = padY + r0 * step;
+          const x2 = padX + 5 * step;
+          const y2 = padY + (r0 + 2) * step;
+
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(x2, y1);
+          ctx.lineTo(x1, y2);
+          ctx.stroke();
+        }
+
+        // 직전 착수 위치 사각 와이어프레임 표시
+        if (jgLastMove) {
+          const boxR = step * 0.44;
+          ctx.lineWidth = 1;
+          for (const pt of [jgLastMove.from, jgLastMove.to]) {
+            const cx = padX + pt.c * step;
+            const cy = padY + pt.r * step;
+            ctx.strokeRect(cx - boxR, cy - boxR, boxR * 2, boxR * 2);
+          }
+        }
+
+        // 선택된 기물의 이동 가능 위치 표식 (빈 칸은 점, 적 기물은 외곽 링)
+        for (const mv of jgValidMoves) {
+          const cx = padX + mv.c * step;
+          const cy = padY + mv.r * step;
+          if (!jgBoard[mv.r][mv.c]) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, step * 0.12, 0, Math.PI * 2);
+            ctx.fillStyle = "#000000";
+            ctx.fill();
+          } else {
+            ctx.beginPath();
+            ctx.arc(cx, cy, step * 0.46, 0, Math.PI * 2);
+            ctx.lineWidth = Math.max(1.5, size / 320);
+            ctx.strokeStyle = "#000000";
+            ctx.stroke();
+          }
+        }
+
+        // 장기 기물 그리기 (팔각형 기물)
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 0; c < JG_COLS; c++) {
+            const piece = jgBoard[r][c];
+            if (!piece) continue;
+
+            const cx = padX + c * step;
+            const cy = padY + r * step;
+            const isSelected = jgSelected && jgSelected.r === r && jgSelected.c === c;
+
+            // 기물 크기 차등 (궁 > 차/포/마/상 > 사/졸)
+            let radius = step * 0.37;
+            if (piece.type === "K") radius = step * 0.44;
+            else if (piece.type === "A" || piece.type === "P") radius = step * 0.31;
+
+            drawOctagonPiece(cx, cy, radius, piece, isSelected, size);
+          }
+        }
+      }
+
+      // 순수 흑백 팔각형 장기 기물 렌더러
+      // 초(SIDE_1): 흰 배경(#FFFFFF) + 검은 테두리/한자(#000000)
+      // 한(SIDE_2): 검은 배경(#000000) + 흰 한자(#FFFFFF)
+      function drawOctagonPiece(cx, cy, radius, piece, isSelected, boardSize) {
+        const cut = radius * 0.42;
+        const pts = [
+          [cx - cut, cy - radius],
+          [cx + cut, cy - radius],
+          [cx + radius, cy - cut],
+          [cx + radius, cy + cut],
+          [cx + cut, cy + radius],
+          [cx - cut, cy + radius],
+          [cx - radius, cy + cut],
+          [cx - radius, cy - cut]
+        ];
+
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i][0], pts[i][1]);
+        }
+        ctx.closePath();
+
+        if (piece.side === SIDE_1) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+          ctx.lineWidth = isSelected ? Math.max(2.6, boardSize / 180) : Math.max(1.5, boardSize / 340);
+          ctx.strokeStyle = "#000000";
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = "#000000";
+          ctx.fill();
+          ctx.lineWidth = isSelected ? Math.max(2.6, boardSize / 180) : Math.max(1.5, boardSize / 340);
+          ctx.strokeStyle = "#000000";
+          ctx.stroke();
+
+          if (isSelected) {
+            // 한 기물 선택 시 내부 흰색 테두리 강조
+            const innerR = radius * 0.84;
+            const innerC = innerR * 0.42;
+            ctx.beginPath();
+            ctx.moveTo(cx - innerC, cy - innerR);
+            ctx.lineTo(cx + innerC, cy - innerR);
+            ctx.lineTo(cx + innerR, cy - innerC);
+            ctx.lineTo(cx + innerR, cy + innerC);
+            ctx.lineTo(cx + innerC, cy + innerR);
+            ctx.lineTo(cx - innerC, cy + innerR);
+            ctx.lineTo(cx - innerR, cy + innerC);
+            ctx.lineTo(cx - innerR, cy - innerC);
+            ctx.closePath();
+            ctx.lineWidth = Math.max(1.2, boardSize / 400);
+            ctx.strokeStyle = "#ffffff";
+            ctx.stroke();
+          }
+        }
+
+        // 한자 표기
+        const label = getJanggiHanja(piece.side, piece.type);
+        const fontSize = Math.max(9, Math.round(radius * 1.18));
+        ctx.font = `700 ${fontSize}px "Noto Serif KR", "Batang", serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = piece.side === SIDE_1 ? "#000000" : "#ffffff";
+        ctx.fillText(label, cx, cy + fontSize * 0.04);
+      }
+
+      function getJanggiHanja(side, type) {
+        if (type === "K") return side === SIDE_1 ? "楚" : "漢";
+        if (type === "R") return "車";
+        if (type === "C") return "包";
+        if (type === "H") return "馬";
+        if (type === "E") return "象";
+        if (type === "A") return "士";
+        if (type === "P") return side === SIDE_1 ? "卒" : "兵";
+        return "";
+      }
+
+      // ==================== 좌표 변환 ====================
+
+      function getCoordFromEvent(e) {
         const rect = canvas.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return null;
 
@@ -278,283 +569,188 @@
         const x = (e.clientX - rect.left) * scaleX;
         const y = (e.clientY - rect.top) * scaleY;
 
-        const padding = boardPixelSize / (GRID_COUNT + 1);
-        const step = (boardPixelSize - padding * 2) / (GRID_COUNT - 1);
-        if (step <= 0) return null;
-
-        const c = Math.round((x - padding) / step);
-        const r = Math.round((y - padding) / step);
-
-        if (r < 0 || r >= GRID_COUNT || c < 0 || c >= GRID_COUNT) return null;
-
-        const cx = padding + c * step;
-        const cy = padding + r * step;
-        const dist = Math.hypot(x - cx, y - cy);
-        if (dist > step * 0.48) return null;
-
-        return { r, c };
+        if (currentGame === "janggi") {
+          const { padX, padY, step } = getJanggiMetrics(boardPixelSize);
+          if (step <= 0) return null;
+          const c = Math.round((x - padX) / step);
+          const r = Math.round((y - padY) / step);
+          if (r < 0 || r >= JG_ROWS || c < 0 || c >= JG_COLS) return null;
+          const dist = Math.hypot(x - (padX + c * step), y - (padY + r * step));
+          if (dist > step * 0.48) return null;
+          return { r, c };
+        } else {
+          const padding = boardPixelSize / (GO_SIZE + 1);
+          const step = (boardPixelSize - padding * 2) / (GO_SIZE - 1);
+          if (step <= 0) return null;
+          const c = Math.round((x - padding) / step);
+          const r = Math.round((y - padding) / step);
+          if (r < 0 || r >= GO_SIZE || c < 0 || c >= GO_SIZE) return null;
+          const dist = Math.hypot(x - (padding + c * step), y - (padding + r * step));
+          if (dist > step * 0.48) return null;
+          return { r, c };
+        }
       }
 
-      // 5목 승리 판정 (가로, 세로, 양 대각선)
-      function checkWin(r, c, color) {
-        const dirs = [
-          [0, 1],
-          [1, 0],
-          [1, 1],
-          [1, -1]
-        ];
+      // ==================== 1. 오목 로직 & AI ====================
 
-        for (const [dr, dc] of dirs) {
-          const line = [[r, c]];
-
-          let nr = r + dr;
-          let nc = c + dc;
-          while (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === color
-          ) {
-            line.push([nr, nc]);
-            nr += dr;
-            nc += dc;
-          }
-
-          nr = r - dr;
-          nc = c - dc;
-          while (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === color
-          ) {
-            line.unshift([nr, nc]);
-            nr -= dr;
-            nc -= dc;
-          }
-
-          if (line.length >= 5) {
-            return line;
-          }
-        }
-        return null;
-      }
-
-      function isBoardFull() {
-        for (let r = 0; r < GRID_COUNT; r++) {
-          for (let c = 0; c < GRID_COUNT; c++) {
-            if (board[r][c] === EMPTY) return false;
-          }
-        }
-        return true;
-      }
-
-      // 돌 착수 처리
-      function placeStone(r, c, color) {
-        if (gameOver || board[r][c] !== EMPTY) return false;
-
-        board[r][c] = color;
-        const win = checkWin(r, c, color);
-        if (win) {
-          winningLine = win;
-          gameOver = true;
-          drawBoard();
-          return true;
-        }
-
-        if (isBoardFull()) {
-          gameOver = true;
-          drawBoard();
-          return true;
-        }
-
-        currentTurn = color === BLACK ? WHITE : BLACK;
-        drawBoard();
-        return true;
-      }
-
-      // ================= AI 엔진 (패턴 휴리스틱 + 알파-베타 탐색) =================
-
-      const DIRECTIONS = [
+      const DIRS_4 = [
         [0, 1],
         [1, 0],
         [1, 1],
         [1, -1]
       ];
 
-      // 특정 위치에 착수했을 때의 4방향 패턴 점수 계산
-      function evaluatePoint(r, c, color) {
-        let totalScore = 0;
+      function omokCheckWin(r, c, color) {
+        for (const [dr, dc] of DIRS_4) {
+          const line = [[r, c]];
+          let nr = r + dr;
+          let nc = c + dc;
+          while (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === color) {
+            line.push([nr, nc]);
+            nr += dr;
+            nc += dc;
+          }
+          nr = r - dr;
+          nc = c - dc;
+          while (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === color) {
+            line.unshift([nr, nc]);
+            nr -= dr;
+            nc -= dc;
+          }
+          if (line.length >= 5) return line;
+        }
+        return null;
+      }
 
-        for (const [dr, dc] of DIRECTIONS) {
+      function omokPlaceStone(r, c, color) {
+        if (gameOver || grid19[r][c] !== EMPTY) return false;
+        grid19[r][c] = color;
+
+        const win = omokCheckWin(r, c, color);
+        if (win) {
+          omokWinLine = win;
+          gameOver = true;
+          render();
+          showResult(color === SIDE_1 ? "흑 승" : "백 승");
+          return true;
+        }
+
+        let full = true;
+        for (let i = 0; i < GO_SIZE && full; i++) {
+          for (let j = 0; j < GO_SIZE; j++) {
+            if (grid19[i][j] === EMPTY) {
+              full = false;
+              break;
+            }
+          }
+        }
+        if (full) {
+          gameOver = true;
+          render();
+          showResult("무승부");
+          return true;
+        }
+
+        currentTurn = color === SIDE_1 ? SIDE_2 : SIDE_1;
+        render();
+        return true;
+      }
+
+      function omokEvaluatePoint(r, c, color) {
+        let total = 0;
+        for (const [dr, dc] of DIRS_4) {
           let count = 1;
           let openEnds = 0;
 
-          // 정방향 탐색
           let nr = r + dr;
           let nc = c + dc;
-          while (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === color
-          ) {
+          while (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === color) {
             count++;
             nr += dr;
             nc += dc;
           }
-          if (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === EMPTY
-          ) {
-            openEnds++;
-          }
+          if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === EMPTY) openEnds++;
 
-          // 역방향 탐색
           nr = r - dr;
           nc = c - dc;
-          while (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === color
-          ) {
+          while (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === color) {
             count++;
             nr -= dr;
             nc -= dc;
           }
-          if (
-            nr >= 0 && nr < GRID_COUNT &&
-            nc >= 0 && nc < GRID_COUNT &&
-            board[nr][nc] === EMPTY
-          ) {
-            openEnds++;
-          }
+          if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === EMPTY) openEnds++;
 
-          // 연속 돌 개수 및 열린 양끝에 따른 가중치
-          if (count >= 5) {
-            totalScore += 1000000;
-          } else if (count === 4) {
-            if (openEnds === 2) totalScore += 120000; // 열린 4
-            else if (openEnds === 1) totalScore += 18000; // 닫힌 4
-          } else if (count === 3) {
-            if (openEnds === 2) totalScore += 15000; // 열린 3
-            else if (openEnds === 1) totalScore += 1800; // 닫힌 3
-          } else if (count === 2) {
-            if (openEnds === 2) totalScore += 1200; // 열린 2
-            else if (openEnds === 1) totalScore += 150;
-          } else if (count === 1) {
-            if (openEnds === 2) totalScore += 40;
-          }
+          if (count >= 5) total += 1000000;
+          else if (count === 4) total += openEnds === 2 ? 120000 : openEnds === 1 ? 18000 : 0;
+          else if (count === 3) total += openEnds === 2 ? 15000 : openEnds === 1 ? 1800 : 0;
+          else if (count === 2) total += openEnds === 2 ? 1200 : openEnds === 1 ? 150 : 0;
+          else if (count === 1 && openEnds === 2) total += 40;
         }
-
-        // 중앙 지향 보너스
         const centerDist = Math.abs(r - 9) + Math.abs(c - 9);
-        totalScore += Math.max(0, 18 - centerDist);
-
-        return totalScore;
+        return total + Math.max(0, 18 - centerDist);
       }
 
-      // 현재 돌 주변(반경 2칸 이내)의 유효 후보 수 추출
-      function getCandidateMoves(maxCandidates) {
-        const candidates = [];
+      function omokGetCandidates(maxCount) {
+        const list = [];
         let hasStone = false;
-
-        for (let r = 0; r < GRID_COUNT; r++) {
-          for (let c = 0; c < GRID_COUNT; c++) {
-            if (board[r][c] !== EMPTY) {
+        for (let r = 0; r < GO_SIZE && !hasStone; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            if (grid19[r][c] !== EMPTY) {
               hasStone = true;
               break;
             }
           }
-          if (hasStone) break;
         }
+        if (!hasStone) return [{ r: 9, c: 9, score: 100, attack: 100, defend: 100 }];
 
-        if (!hasStone) {
-          return [{ r: 9, c: 9, score: 100 }];
-        }
-
-        for (let r = 0; r < GRID_COUNT; r++) {
-          for (let c = 0; c < GRID_COUNT; c++) {
-            if (board[r][c] !== EMPTY) continue;
-
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            if (grid19[r][c] !== EMPTY) continue;
             let near = false;
             for (let dr = -2; dr <= 2 && !near; dr++) {
               for (let dc = -2; dc <= 2; dc++) {
                 const nr = r + dr;
                 const nc = c + dc;
-                if (
-                  nr >= 0 && nr < GRID_COUNT &&
-                  nc >= 0 && nc < GRID_COUNT &&
-                  board[nr][nc] !== EMPTY
-                ) {
+                if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] !== EMPTY) {
                   near = true;
                   break;
                 }
               }
             }
-
             if (near) {
-              const attack = evaluatePoint(r, c, aiColor);
-              const defend = evaluatePoint(r, c, playerColor);
-              // 공격과 방어 중 위협도가 높은 쪽을 우선 평가
-              const priority = Math.max(attack * 1.05, defend);
-              candidates.push({ r, c, score: priority, attack, defend });
+              const attack = omokEvaluatePoint(r, c, aiSide);
+              const defend = omokEvaluatePoint(r, c, playerSide);
+              list.push({ r, c, score: Math.max(attack * 1.05, defend), attack, defend });
             }
           }
         }
-
-        candidates.sort((a, b) => b.score - a.score);
-        return candidates.slice(0, maxCandidates);
+        list.sort((a, b) => b.score - a.score);
+        return list.slice(0, maxCount);
       }
 
-      // 전체 보드 상태 정적 평가 (AI 관점)
-      function evaluateBoardState() {
-        let aiTotal = 0;
-        let playerTotal = 0;
-
-        for (let r = 0; r < GRID_COUNT; r++) {
-          for (let c = 0; c < GRID_COUNT; c++) {
-            const cell = board[r][c];
+      function omokEvaluateBoard() {
+        let aiScore = 0;
+        let plScore = 0;
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            const cell = grid19[r][c];
             if (cell === EMPTY) continue;
-
-            // 가로, 세로, 우하향, 좌하향 시작점 기준으로 중복 없이 평가
-            for (const [dr, dc] of DIRECTIONS) {
-              const prevR = r - dr;
-              const prevC = c - dc;
-              if (
-                prevR >= 0 && prevR < GRID_COUNT &&
-                prevC >= 0 && prevC < GRID_COUNT &&
-                board[prevR][prevC] === cell
-              ) {
-                continue;
-              }
+            for (const [dr, dc] of DIRS_4) {
+              const pr = r - dr;
+              const pc = c - dc;
+              if (pr >= 0 && pr < GO_SIZE && pc >= 0 && pc < GO_SIZE && grid19[pr][pc] === cell) continue;
 
               let count = 0;
               let nr = r;
               let nc = c;
-              while (
-                nr >= 0 && nr < GRID_COUNT &&
-                nc >= 0 && nc < GRID_COUNT &&
-                board[nr][nc] === cell
-              ) {
+              while (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === cell) {
                 count++;
                 nr += dr;
                 nc += dc;
               }
-
               let openEnds = 0;
-              if (
-                prevR >= 0 && prevR < GRID_COUNT &&
-                prevC >= 0 && prevC < GRID_COUNT &&
-                board[prevR][prevC] === EMPTY
-              ) {
-                openEnds++;
-              }
-              if (
-                nr >= 0 && nr < GRID_COUNT &&
-                nc >= 0 && nc < GRID_COUNT &&
-                board[nr][nc] === EMPTY
-              ) {
-                openEnds++;
-              }
+              if (pr >= 0 && pr < GO_SIZE && pc >= 0 && pc < GO_SIZE && grid19[pr][pc] === EMPTY) openEnds++;
+              if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE && grid19[nr][nc] === EMPTY) openEnds++;
 
               let val = 0;
               if (count >= 5) val = 1000000;
@@ -562,133 +758,893 @@
               else if (count === 3) val = openEnds === 2 ? 12000 : openEnds === 1 ? 1200 : 0;
               else if (count === 2) val = openEnds === 2 ? 800 : openEnds === 1 ? 100 : 0;
 
-              if (cell === aiColor) aiTotal += val;
-              else playerTotal += val * 1.1; // 상대 위협 방어 가중치
+              if (cell === aiSide) aiScore += val;
+              else plScore += val * 1.1;
             }
           }
         }
-
-        return aiTotal - playerTotal;
+        return aiScore - plScore;
       }
 
-      // 알파-베타 가지치기 미니맥스 탐색
-      function alphaBeta(depth, alpha, beta, maximizingPlayer, beamWidth) {
-        if (depth <= 0) {
-          return evaluateBoardState();
-        }
-
-        const moves = getCandidateMoves(beamWidth);
+      function omokAlphaBeta(depth, alpha, beta, isMax, beam) {
+        if (depth <= 0) return omokEvaluateBoard();
+        const moves = omokGetCandidates(beam);
         if (moves.length === 0) return 0;
 
-        if (maximizingPlayer) {
+        if (isMax) {
           let maxEval = -Infinity;
-          for (const move of moves) {
-            board[move.r][move.c] = aiColor;
-            if (checkWin(move.r, move.c, aiColor)) {
-              board[move.r][move.c] = EMPTY;
+          for (const m of moves) {
+            grid19[m.r][m.c] = aiSide;
+            if (omokCheckWin(m.r, m.c, aiSide)) {
+              grid19[m.r][m.c] = EMPTY;
               return 1000000 + depth * 10000;
             }
-            const evalScore = alphaBeta(depth - 1, alpha, beta, false, beamWidth);
-            board[move.r][move.c] = EMPTY;
-
-            if (evalScore > maxEval) maxEval = evalScore;
-            if (evalScore > alpha) alpha = evalScore;
+            const ev = omokAlphaBeta(depth - 1, alpha, beta, false, beam);
+            grid19[m.r][m.c] = EMPTY;
+            if (ev > maxEval) maxEval = ev;
+            if (ev > alpha) alpha = ev;
             if (beta <= alpha) break;
           }
           return maxEval;
         } else {
           let minEval = Infinity;
-          for (const move of moves) {
-            board[move.r][move.c] = playerColor;
-            if (checkWin(move.r, move.c, playerColor)) {
-              board[move.r][move.c] = EMPTY;
+          for (const m of moves) {
+            grid19[m.r][m.c] = playerSide;
+            if (omokCheckWin(m.r, m.c, playerSide)) {
+              grid19[m.r][m.c] = EMPTY;
               return -1000000 - depth * 10000;
             }
-            const evalScore = alphaBeta(depth - 1, alpha, beta, true, beamWidth);
-            board[move.r][move.c] = EMPTY;
-
-            if (evalScore < minEval) minEval = evalScore;
-            if (evalScore < beta) beta = evalScore;
+            const ev = omokAlphaBeta(depth - 1, alpha, beta, true, beam);
+            grid19[m.r][m.c] = EMPTY;
+            if (ev < minEval) minEval = ev;
+            if (ev < beta) beta = ev;
             if (beta <= alpha) break;
           }
           return minEval;
         }
       }
 
-      // 사용자 입력 실력(소수점 및 임의 크기 지원)에 따른 AI 최적 수 계산
-      function computeBestMove() {
-        const rawSkill = parseFloat(aiSkillInput.value);
-        const skill = Number.isNaN(rawSkill) ? 3 : rawSkill;
+      function omokComputeAiMove(skill) {
+        const candidates = omokGetCandidates(30);
+        if (candidates.length === 0) return null;
+        if (skill <= 0) return candidates[Math.floor(Math.random() * candidates.length)];
 
-        // 즉시 승리 또는 즉시 패배 방어 수 최우선 탐색
-        const allCandidates = getCandidateMoves(30);
-        if (allCandidates.length === 0) return null;
-
-        // AI 난이도가 매우 낮을 때(0 이하 또는 1 미만) 랜덤성/실수율 적용
-        if (skill <= 0) {
-          const idx = Math.floor(Math.random() * allCandidates.length);
-          return allCandidates[idx];
-        }
-
-        // 즉시 5목 완성 수 확인 (실력 1.5 이상일 때 정확히 포착)
         if (skill >= 1.5) {
-          for (const m of allCandidates) {
-            if (m.attack >= 1000000) return m;
-          }
-          for (const m of allCandidates) {
-            if (m.defend >= 1000000) return m;
-          }
+          for (const m of candidates) if (m.attack >= 1000000) return m;
+          for (const m of candidates) if (m.defend >= 1000000) return m;
         }
 
-        // 실력 수치(소수점 포함)에 따라 탐색 깊이, 후보군 폭, 노이즈 스케일링
-        // 프리즈 방지를 위해 실질 탐색 깊이는 합리적 상한을 두되 소수점 단위로 정밀도 연속 조절
-        const clampedSkill = Math.min(skill, 12);
-        const depth = Math.max(1, Math.min(4, Math.floor(clampedSkill / 2.2) + 1));
-        const beamWidth = Math.max(4, Math.min(18, Math.round(4 + clampedSkill * 1.4)));
-        // 소수점 차이가 평가 정밀도에 즉각 반영되도록 노이즈 진폭 계산
+        const clamped = Math.min(skill, 12);
+        const depth = Math.max(1, Math.min(4, Math.floor(clamped / 2.2) + 1));
+        const beam = Math.max(4, Math.min(18, Math.round(4 + clamped * 1.4)));
         const noiseScale = Math.max(0, 25000 / Math.pow(skill + 0.5, 2.2));
 
-        const topMoves = allCandidates.slice(0, beamWidth);
+        const topMoves = candidates.slice(0, beam);
         let bestMove = topMoves[0];
         let bestScore = -Infinity;
+        const t0 = performance.now();
 
-        const startTime = performance.now();
-        const timeBudgetMs = 650; // 브라우저 응답성 유지용 시간 제한
+        for (const m of topMoves) {
+          grid19[m.r][m.c] = aiSide;
+          let sc;
+          if (omokCheckWin(m.r, m.c, aiSide)) sc = 2000000;
+          else if (depth <= 1) sc = omokEvaluateBoard() + m.score * 0.25;
+          else sc = omokAlphaBeta(depth - 1, -Infinity, Infinity, false, Math.max(4, beam - 4));
+          grid19[m.r][m.c] = EMPTY;
 
-        for (const move of topMoves) {
-          board[move.r][move.c] = aiColor;
-
-          let score;
-          if (checkWin(move.r, move.c, aiColor)) {
-            score = 2000000;
-          } else if (depth <= 1) {
-            score = evaluateBoardState() + move.score * 0.25;
-          } else {
-            score = alphaBeta(depth - 1, -Infinity, Infinity, false, Math.max(4, beamWidth - 4));
-          }
-
-          board[move.r][move.c] = EMPTY;
-
-          // 난이도 수치에 반비례하는 미세 노이즈 추가
           const jitter = noiseScale > 0 ? (Math.random() - 0.5) * noiseScale : 0;
-          const finalScore = score + jitter;
+          if (sc + jitter > bestScore) {
+            bestScore = sc + jitter;
+            bestMove = m;
+          }
+          if (performance.now() - t0 > 600) break;
+        }
+        return bestMove;
+      }
 
-          if (finalScore > bestScore) {
-            bestScore = finalScore;
-            bestMove = move;
+      // ==================== 2. 바둑 로직 & AI ====================
+
+      const ORTHO = [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1]
+      ];
+
+      function goCloneBoard(src) {
+        return src.map((row) => row.slice());
+      }
+
+      function goBoardHash(b) {
+        let s = "";
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            s += b[r][c];
+          }
+        }
+        return s;
+      }
+
+      // 연결된 돌 그룹과 활로(liberties) 집합 계산
+      function goGetGroupAndLiberties(b, startR, startC) {
+        const color = b[startR][startC];
+        const visited = new Set();
+        const liberties = new Set();
+        const stones = [];
+        const stack = [[startR, startC]];
+        visited.add(`${startR},${startC}`);
+
+        while (stack.length > 0) {
+          const [r, c] = stack.pop();
+          stones.push([r, c]);
+
+          for (const [dr, dc] of ORTHO) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (nr < 0 || nr >= GO_SIZE || nc < 0 || nc >= GO_SIZE) continue;
+            const cell = b[nr][nc];
+            if (cell === EMPTY) {
+              liberties.add(`${nr},${nc}`);
+            } else if (cell === color) {
+              const key = `${nr},${nc}`;
+              if (!visited.has(key)) {
+                visited.add(key);
+                stack.push([nr, nc]);
+              }
+            }
+          }
+        }
+        return { stones, libertiesCount: liberties.size };
+      }
+
+      // 가상 착수 검증 (자충수 금지, 따내기 처리, 패(Ko) 금지)
+      function goSimulateMove(b, r, c, color, prevHash) {
+        if (r < 0 || r >= GO_SIZE || c < 0 || c >= GO_SIZE || b[r][c] !== EMPTY) return null;
+
+        const nextB = goCloneBoard(b);
+        nextB[r][c] = color;
+        const opp = color === SIDE_1 ? SIDE_2 : SIDE_1;
+        let captured = 0;
+
+        // 인접 상대 돌 활로 0인 그룹 제거
+        for (const [dr, dc] of ORTHO) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr < 0 || nr >= GO_SIZE || nc < 0 || nc >= GO_SIZE) continue;
+          if (nextB[nr][nc] === opp) {
+            const grp = goGetGroupAndLiberties(nextB, nr, nc);
+            if (grp.libertiesCount === 0) {
+              for (const [sr, sc] of grp.stones) {
+                nextB[sr][sc] = EMPTY;
+                captured++;
+              }
+            }
+          }
+        }
+
+        // 자충수 확인
+        const selfGrp = goGetGroupAndLiberties(nextB, r, c);
+        if (selfGrp.libertiesCount === 0) return null;
+
+        // 패(Ko) 직전 판면과 동일 여부 확인
+        const nextHash = goBoardHash(nextB);
+        if (prevHash && nextHash === prevHash) return null;
+
+        return { nextBoard: nextB, captured, nextHash, selfLiberties: selfGrp.libertiesCount };
+      }
+
+      function goPlaceStone(r, c, color) {
+        if (gameOver) return false;
+        const sim = goSimulateMove(grid19, r, c, color, goPrevBoardHash);
+        if (!sim) return false;
+
+        goPrevBoardHash = goBoardHash(grid19);
+        grid19 = sim.nextBoard;
+        if (color === SIDE_1) goCapturedBy1 += sim.captured;
+        else goCapturedBy2 += sim.captured;
+
+        goLastMove = { r, c };
+        goConsecutivePasses = 0;
+        currentTurn = color === SIDE_1 ? SIDE_2 : SIDE_1;
+        render();
+        return true;
+      }
+
+      // 중국식 간이 계가 (돌 수 + 둘러싸인 빈 집 + 덤 6.5집)
+      function goFinishAndScore() {
+        gameOver = true;
+        const visited = Array.from({ length: GO_SIZE }, () => Array(GO_SIZE).fill(false));
+        let blackArea = 0;
+        let whiteArea = 0;
+
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            if (grid19[r][c] === SIDE_1) blackArea++;
+            else if (grid19[r][c] === SIDE_2) whiteArea++;
+            else if (!visited[r][c]) {
+              const stack = [[r, c]];
+              visited[r][c] = true;
+              let count = 0;
+              let touch1 = false;
+              let touch2 = false;
+
+              while (stack.length > 0) {
+                const [cr, cc] = stack.pop();
+                count++;
+                for (const [dr, dc] of ORTHO) {
+                  const nr = cr + dr;
+                  const nc = cc + dc;
+                  if (nr < 0 || nr >= GO_SIZE || nc < 0 || nc >= GO_SIZE) continue;
+                  const v = grid19[nr][nc];
+                  if (v === SIDE_1) touch1 = true;
+                  else if (v === SIDE_2) touch2 = true;
+                  else if (!visited[nr][nc]) {
+                    visited[nr][nc] = true;
+                    stack.push([nr, nc]);
+                  }
+                }
+              }
+
+              if (touch1 && !touch2) blackArea += count;
+              else if (touch2 && !touch1) whiteArea += count;
+            }
+          }
+        }
+
+        const komi = 6.5;
+        const finalWhite = whiteArea + komi;
+        render();
+        if (blackArea > finalWhite) {
+          showResult(`흑 ${(blackArea - finalWhite).toFixed(1)}집 승`);
+        } else {
+          showResult(`백 ${(finalWhite - blackArea).toFixed(1)}집 승`);
+        }
+      }
+
+      // 바둑 착수 평가 함수
+      function goEvaluateMove(b, r, c, color, sim) {
+        let score = 0;
+        const opp = color === SIDE_1 ? SIDE_2 : SIDE_1;
+
+        // 1. 따내기 보상
+        score += sim.captured * 140;
+
+        // 2. 착수 후 내 돌 활로 수 (단수 자초 감점)
+        if (sim.selfLiberties === 1) score -= 95;
+        else if (sim.selfLiberties === 2) score += 10;
+        else score += Math.min(sim.selfLiberties, 6) * 8;
+
+        // 3. 단수 몰기 / 아군 단수 구출 / 연결 확인
+        for (const [dr, dc] of ORTHO) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr < 0 || nr >= GO_SIZE || nc < 0 || nc >= GO_SIZE) continue;
+
+          if (b[nr][nc] === opp) {
+            const beforeGrp = goGetGroupAndLiberties(b, nr, nc);
+            if (sim.nextBoard[nr][nc] === opp) {
+              const afterGrp = goGetGroupAndLiberties(sim.nextBoard, nr, nc);
+              if (afterGrp.libertiesCount === 1) {
+                score += beforeGrp.stones.length * 45 + 30; // 단수 공격
+              } else if (afterGrp.libertiesCount === 2) {
+                score += 14;
+              }
+            }
+          } else if (b[nr][nc] === color) {
+            const beforeAlly = goGetGroupAndLiberties(b, nr, nc);
+            if (beforeAlly.libertiesCount === 1) {
+              score += beforeAlly.stones.length * 55 + 35; // 단수 탈출
+            } else {
+              score += 12; // 연결
+            }
+          }
+        }
+
+        // 4. 대각선 호구/날일자 행마 보너스
+        const diags = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+        for (const [dr, dc] of diags) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE) {
+            if (b[nr][nc] === color) score += 9;
+            else if (b[nr][nc] === opp) score += 6;
+          }
+        }
+
+        // 5. 3선·4선 귀/변 가치 (1선·2선 초반 과다 착수 억제)
+        const distEdgeR = Math.min(r, GO_SIZE - 1 - r);
+        const distEdgeC = Math.min(c, GO_SIZE - 1 - c);
+        const minEdge = Math.min(distEdgeR, distEdgeC);
+        const maxEdge = Math.max(distEdgeR, distEdgeC);
+
+        if ((distEdgeR === 2 || distEdgeR === 3) && (distEdgeC === 2 || distEdgeC === 3)) {
+          score += 26; // 화점·소목·외목
+        } else if (minEdge === 2 || minEdge === 3) {
+          score += 16; // 변의 3선·4선
+        } else if (minEdge === 0) {
+          score -= 18; // 1선
+        } else if (minEdge === 1 && maxEdge > 2) {
+          score -= 8; // 2선
+        }
+
+        // 6. 자기 집(완전한 눈) 메우기 방지
+        let ownOrtho = 0;
+        let validOrtho = 0;
+        for (const [dr, dc] of ORTHO) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < GO_SIZE && nc >= 0 && nc < GO_SIZE) {
+            validOrtho++;
+            if (b[nr][nc] === color) ownOrtho++;
+          }
+        }
+        if (ownOrtho === validOrtho && sim.captured === 0) {
+          score -= 120;
+        }
+
+        return score;
+      }
+
+      function goComputeAiMove(skill) {
+        let stoneCount = 0;
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            if (grid19[r][c] !== EMPTY) stoneCount++;
+          }
+        }
+
+        // 상대가 패스했고 돌이 충분히 놓인 종반이면 AI도 패스 고려
+        if (goConsecutivePasses >= 1 && stoneCount > 120) {
+          return { pass: true };
+        }
+
+        const legalMoves = [];
+        for (let r = 0; r < GO_SIZE; r++) {
+          for (let c = 0; c < GO_SIZE; c++) {
+            if (grid19[r][c] !== EMPTY) continue;
+            const sim = goSimulateMove(grid19, r, c, aiSide, goPrevBoardHash);
+            if (!sim) continue;
+            const evalScore = goEvaluateMove(grid19, r, c, aiSide, sim);
+            legalMoves.push({ r, c, score: evalScore, sim });
+          }
+        }
+
+        if (legalMoves.length === 0) return { pass: true };
+
+        legalMoves.sort((a, b) => b.score - a.score);
+
+        // 유효한 이득 수가 전혀 없는 종반이면 패스
+        if (legalMoves[0].score < -40 && stoneCount > 80) {
+          return { pass: true };
+        }
+
+        if (skill <= 0) {
+          const pick = legalMoves[Math.floor(Math.random() * Math.min(25, legalMoves.length))];
+          return { r: pick.r, c: pick.c };
+        }
+
+        // 난이도(소수점 포함)에 따라 2수 앞 응수 수읽기 깊이 및 후보 폭 조절
+        const clamped = Math.min(skill, 12);
+        const beam = Math.max(3, Math.min(16, Math.round(3 + clamped * 1.3)));
+        const lookahead = clamped >= 2.0;
+        const noiseScale = Math.max(0, 90 / Math.pow(skill + 0.4, 1.8));
+
+        const topCandidates = legalMoves.slice(0, beam);
+        let bestMove = topCandidates[0];
+        let bestTotal = -Infinity;
+        const t0 = performance.now();
+
+        for (const cand of topCandidates) {
+          let total = cand.score;
+
+          if (lookahead) {
+            // 상대 최선의 응수 1수 탐색
+            const nextB = cand.sim.nextBoard;
+            const nextPrevHash = goBoardHash(grid19);
+            let maxOppReply = 0;
+
+            // 착수 주변 3칸 내 응수만 빠르게 평가
+            for (let dr = -3; dr <= 3; dr++) {
+              for (let dc = -3; dc <= 3; dc++) {
+                const nr = cand.r + dr;
+                const nc = cand.c + dc;
+                if (nr < 0 || nr >= GO_SIZE || nc < 0 || nc >= GO_SIZE) continue;
+                if (nextB[nr][nc] !== EMPTY) continue;
+                const oppSim = goSimulateMove(nextB, nr, nc, playerSide, nextPrevHash);
+                if (!oppSim) continue;
+                const oppVal = goEvaluateMove(nextB, nr, nc, playerSide, oppSim);
+                if (oppVal > maxOppReply) maxOppReply = oppVal;
+              }
+            }
+            total -= maxOppReply * 0.55;
           }
 
-          if (performance.now() - startTime > timeBudgetMs) {
-            break;
+          const jitter = noiseScale > 0 ? (Math.random() - 0.5) * noiseScale : 0;
+          if (total + jitter > bestTotal) {
+            bestTotal = total + jitter;
+            bestMove = cand;
           }
+          if (performance.now() - t0 > 600) break;
+        }
+
+        return { r: bestMove.r, c: bestMove.c };
+      }
+
+      // ==================== 3. 장기 로직 & AI ====================
+
+      // 초기 장기판 세팅 (마상마상 표준 진형: 상단 한 SIDE_2, 하단 초 SIDE_1)
+      function jgCreateInitialBoard() {
+        const b = Array.from({ length: JG_ROWS }, () => Array(JG_COLS).fill(null));
+        const setupRow = ["R", "H", "E", "A", null, "A", "E", "H", "R"];
+
+        // 상단 한(SIDE_2)
+        for (let c = 0; c < JG_COLS; c++) {
+          if (setupRow[c]) b[0][c] = { side: SIDE_2, type: setupRow[c] };
+        }
+        b[1][4] = { side: SIDE_2, type: "K" };
+        b[2][1] = { side: SIDE_2, type: "C" };
+        b[2][7] = { side: SIDE_2, type: "C" };
+        for (const c of [0, 2, 4, 6, 8]) {
+          b[3][c] = { side: SIDE_2, type: "P" };
+        }
+
+        // 하단 초(SIDE_1)
+        for (let c = 0; c < JG_COLS; c++) {
+          if (setupRow[c]) b[9][c] = { side: SIDE_1, type: setupRow[c] };
+        }
+        b[8][4] = { side: SIDE_1, type: "K" };
+        b[7][1] = { side: SIDE_1, type: "C" };
+        b[7][7] = { side: SIDE_1, type: "C" };
+        for (const c of [0, 2, 4, 6, 8]) {
+          b[6][c] = { side: SIDE_1, type: "P" };
+        }
+
+        return b;
+      }
+
+      function jgCloneBoard(b) {
+        return b.map((row) => row.map((cell) => (cell ? { side: cell.side, type: cell.type } : null)));
+      }
+
+      function jgInBounds(r, c) {
+        return r >= 0 && r < JG_ROWS && c >= 0 && c < JG_COLS;
+      }
+
+      function jgInPalace(r, c, side) {
+        if (c < 3 || c > 5) return false;
+        if (side === SIDE_2) return r >= 0 && r <= 2;
+        if (side === SIDE_1) return r >= 7 && r <= 9;
+        return (r >= 0 && r <= 2) || (r >= 7 && r <= 9);
+      }
+
+      // 궁성 내 대각선 연결 노드 반환 (꼭짓점 4개 + 중앙 1개만 대각선 이동 가능)
+      function jgGetPalaceDiagonals(r, c) {
+        const res = [];
+        // 상단 궁성 (0..2, 3..5)
+        if (r >= 0 && r <= 2 && c >= 3 && c <= 5) {
+          if (r === 1 && c === 4) {
+            res.push([0, 3], [0, 5], [2, 3], [2, 5]);
+          } else if ((r === 0 || r === 2) && (c === 3 || c === 5)) {
+            res.push([1, 4]);
+          }
+        }
+        // 하단 궁성 (7..9, 3..5)
+        if (r >= 7 && r <= 9 && c >= 3 && c <= 5) {
+          if (r === 8 && c === 4) {
+            res.push([7, 3], [7, 5], [9, 3], [9, 5]);
+          } else if ((r === 7 || r === 9) && (c === 3 || c === 5)) {
+            res.push([8, 4]);
+          }
+        }
+        return res;
+      }
+
+      // 기물별 의사 합법 수(장군 체크 제외) 생성
+      function jgGetPseudoMoves(b, r, c) {
+        const piece = b[r][c];
+        if (!piece) return [];
+        const moves = [];
+        const { side, type } = piece;
+
+        const addIfValid = (nr, nc) => {
+          if (!jgInBounds(nr, nc)) return false;
+          const target = b[nr][nc];
+          if (!target || target.side !== side) {
+            moves.push({ r: nr, c: nc });
+          }
+          return !target;
+        };
+
+        if (type === "K" || type === "A") {
+          // 궁 / 사: 자기 궁성 내 상하좌우 + 궁성 대각선 1칸
+          for (const [dr, dc] of ORTHO) {
+            const nr = r + dr;
+            const nc = c + dc;
+            if (jgInPalace(nr, nc, side)) addIfValid(nr, nc);
+          }
+          for (const [nr, nc] of jgGetPalaceDiagonals(r, c)) {
+            if (jgInPalace(nr, nc, side)) addIfValid(nr, nc);
+          }
+        } else if (type === "R") {
+          // 차: 상하좌우 직선 + 궁성 대각선 직선
+          for (const [dr, dc] of ORTHO) {
+            let nr = r + dr;
+            let nc = c + dc;
+            while (jgInBounds(nr, nc)) {
+              if (!addIfValid(nr, nc)) break;
+              nr += dr;
+              nc += dc;
+            }
+          }
+          // 궁성 대각선 이동 (최대 2칸)
+          for (const [nr1, nc1] of jgGetPalaceDiagonals(r, c)) {
+            const canContinue = addIfValid(nr1, nc1);
+            if (canContinue && nr1 === 1 && nc1 === 4) {
+              const nr2 = 2 - r;
+              const nc2 = 8 - c;
+              addIfValid(nr2, nc2);
+            } else if (canContinue && nr1 === 8 && nc1 === 4) {
+              const nr2 = 16 - r;
+              const nc2 = 8 - c;
+              addIfValid(nr2, nc2);
+            }
+          }
+        } else if (type === "C") {
+          // 포: 상하좌우로 정확히 1개의 기물(포 제외)을 넘어 이동/포획 (포 포획 불가)
+          for (const [dr, dc] of ORTHO) {
+            let nr = r + dr;
+            let nc = c + dc;
+            let jumped = false;
+            while (jgInBounds(nr, nc)) {
+              const cell = b[nr][nc];
+              if (!jumped) {
+                if (cell) {
+                  if (cell.type === "C") break; // 포는 포를 넘을 수 없음
+                  jumped = true;
+                }
+              } else {
+                if (!cell) {
+                  moves.push({ r: nr, c: nc });
+                } else {
+                  if (cell.side !== side && cell.type !== "C") {
+                    moves.push({ r: nr, c: nc });
+                  }
+                  break;
+                }
+              }
+              nr += dr;
+              nc += dc;
+            }
+          }
+          // 궁성 대각선 포 이동 (중앙 칸에 포가 아닌 기물이 있을 때 반대편 꼭짓점으로)
+          const palaceCenters = [
+            { cr: 1, cc: 4, minR: 0, maxR: 2 },
+            { cr: 8, cc: 4, minR: 7, maxR: 9 }
+          ];
+          for (const p of palaceCenters) {
+            if ((r === p.minR || r === p.maxR) && (c === 3 || c === 5)) {
+              const mid = b[p.cr][p.cc];
+              if (mid && mid.type !== "C") {
+                const tr = p.minR + p.maxR - r;
+                const tc = 8 - c;
+                const target = b[tr][tc];
+                if (!target || (target.side !== side && target.type !== "C")) {
+                  moves.push({ r: tr, c: tc });
+                }
+              }
+            }
+          }
+        } else if (type === "H") {
+          // 마: 직선 1칸(멱 확인) 후 대각선 1칸
+          const horseSteps = [
+            { leg: [-1, 0], dest: [-2, -1] },
+            { leg: [-1, 0], dest: [-2, 1] },
+            { leg: [1, 0], dest: [2, -1] },
+            { leg: [1, 0], dest: [2, 1] },
+            { leg: [0, -1], dest: [-1, -2] },
+            { leg: [0, -1], dest: [1, -2] },
+            { leg: [0, 1], dest: [-1, 2] },
+            { leg: [0, 1], dest: [1, 2] }
+          ];
+          for (const st of horseSteps) {
+            const lr = r + st.leg[0];
+            const lc = c + st.leg[1];
+            if (!jgInBounds(lr, lc) || b[lr][lc]) continue;
+            addIfValid(r + st.dest[0], c + st.dest[1]);
+          }
+        } else if (type === "E") {
+          // 상: 직선 1칸(멱1) -> 대각선 1칸(멱2) -> 대각선 1칸
+          const eleSteps = [
+            { l1: [-1, 0], l2: [-2, -1], dest: [-3, -2] },
+            { l1: [-1, 0], l2: [-2, 1], dest: [-3, 2] },
+            { l1: [1, 0], l2: [2, -1], dest: [3, -2] },
+            { l1: [1, 0], l2: [2, 1], dest: [3, 2] },
+            { l1: [0, -1], l2: [-1, -2], dest: [-2, -3] },
+            { l1: [0, -1], l2: [1, -2], dest: [2, -3] },
+            { l1: [0, 1], l2: [-1, 2], dest: [-2, 3] },
+            { l1: [0, 1], l2: [1, 2], dest: [2, 3] }
+          ];
+          for (const st of eleSteps) {
+            const r1 = r + st.l1[0];
+            const c1 = c + st.l1[1];
+            const r2 = r + st.l2[0];
+            const c2 = c + st.l2[1];
+            if (!jgInBounds(r1, c1) || b[r1][c1]) continue;
+            if (!jgInBounds(r2, c2) || b[r2][c2]) continue;
+            addIfValid(r + st.dest[0], c + st.dest[1]);
+          }
+        } else if (type === "P") {
+          // 졸/병: 전진 1칸 및 좌우 1칸 + 상대 궁성 내 대각선 전진
+          const forward = side === SIDE_1 ? -1 : 1;
+          addIfValid(r + forward, c);
+          addIfValid(r, c - 1);
+          addIfValid(r, c + 1);
+
+          for (const [nr, nc] of jgGetPalaceDiagonals(r, c)) {
+            if (nr - r === forward) {
+              addIfValid(nr, nc);
+            }
+          }
+        }
+
+        return moves;
+      }
+
+      // 특정 진영(side)이 현재 장군 상태인지 검사
+      function jgIsInCheck(b, side) {
+        let kr = -1;
+        let kc = -1;
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 0; c < JG_COLS; c++) {
+            const p = b[r][c];
+            if (p && p.side === side && p.type === "K") {
+              kr = r;
+              kc = c;
+              break;
+            }
+          }
+          if (kr !== -1) break;
+        }
+        if (kr === -1) return true;
+
+        const opp = side === SIDE_1 ? SIDE_2 : SIDE_1;
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 0; c < JG_COLS; c++) {
+            const p = b[r][c];
+            if (!p || p.side !== opp) continue;
+            const moves = jgGetPseudoMoves(b, r, c);
+            for (const m of moves) {
+              if (m.r === kr && m.c === kc) return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      // 빅장(두 궁이 같은 세로줄에서 장애물 없이 마주봄) 여부 확인
+      function jgIsBikjang(b) {
+        let k1 = null;
+        let k2 = null;
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 3; c <= 5; c++) {
+            const p = b[r][c];
+            if (p && p.type === "K") {
+              if (p.side === SIDE_1) k1 = { r, c };
+              else k2 = { r, c };
+            }
+          }
+        }
+        if (!k1 || !k2 || k1.c !== k2.c) return false;
+        const minR = Math.min(k1.r, k2.r);
+        const maxR = Math.max(k1.r, k2.r);
+        for (let r = minR + 1; r < maxR; r++) {
+          if (b[r][k1.c]) return false;
+        }
+        return true;
+      }
+
+      // 특정 기물의 완전 합법 수(자충 장군 방지) 반환
+      function jgGetLegalMovesForPiece(b, r, c) {
+        const piece = b[r][c];
+        if (!piece) return [];
+        const pseudo = jgGetPseudoMoves(b, r, c);
+        const legal = [];
+
+        for (const m of pseudo) {
+          const nextB = jgCloneBoard(b);
+          nextB[m.r][m.c] = nextB[r][c];
+          nextB[r][c] = null;
+          if (!jgIsInCheck(nextB, piece.side)) {
+            legal.push(m);
+          }
+        }
+        return legal;
+      }
+
+      // 진영 전체의 모든 합법 수 목록 반환
+      function jgGetAllLegalMoves(b, side) {
+        const all = [];
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 0; c < JG_COLS; c++) {
+            const p = b[r][c];
+            if (!p || p.side !== side) continue;
+            const moves = jgGetLegalMovesForPiece(b, r, c);
+            for (const m of moves) {
+              all.push({
+                from: { r, c },
+                to: m,
+                captured: b[m.r][m.c],
+                piece: p
+              });
+            }
+          }
+        }
+        return all;
+      }
+
+      // 장기 기물 이동 실행
+      function jgExecuteMove(from, to) {
+        if (gameOver) return false;
+        const piece = jgBoard[from.r][from.c];
+        if (!piece || piece.side !== currentTurn) return false;
+
+        jgBoard[to.r][to.c] = piece;
+        jgBoard[from.r][from.c] = null;
+        jgLastMove = { from: { ...from }, to: { ...to } };
+        jgSelected = null;
+        jgValidMoves = [];
+        jgConsecutivePasses = 0;
+
+        const nextSide = currentTurn === SIDE_1 ? SIDE_2 : SIDE_1;
+        const nextMoves = jgGetAllLegalMoves(jgBoard, nextSide);
+
+        // 상대 합법 수가 0개면 외통수(또는 막힘)로 현재 턴 승리
+        if (nextMoves.length === 0) {
+          gameOver = true;
+          render();
+          showResult(currentTurn === SIDE_1 ? "초 승" : "한 승");
+          return true;
+        }
+
+        // 빅장 상태이고 상대가 빅장을 피하지 않고 패스하거나 유지 시 무승부 조건 체크
+        if (jgIsBikjang(jgBoard)) {
+          // 장기 규칙상 빅장 선언 시 무승부 가능하나, 상대가 피할 수 있으므로 계속 진행 후 연속 패스 시 무승부
+        }
+
+        currentTurn = nextSide;
+        render();
+        return true;
+      }
+
+      // 장기 기물 점수 (한국장기협회 기물 점수 기반)
+      const JG_VALUES = {
+        K: 100000,
+        R: 1300,
+        C: 700,
+        H: 500,
+        E: 300,
+        A: 300,
+        P: 200
+      };
+
+      function jgEvaluateBoard(b) {
+        let score = 0;
+        for (let r = 0; r < JG_ROWS; r++) {
+          for (let c = 0; c < JG_COLS; c++) {
+            const p = b[r][c];
+            if (!p) continue;
+            let val = JG_VALUES[p.type] || 0;
+
+            // 위치 가중치: 중앙 제어 및 졸/병 전진 보너스
+            const centerBonus = (4 - Math.abs(c - 4)) * 6;
+            if (p.type === "P") {
+              const advance = p.side === SIDE_1 ? (6 - r) : (r - 3);
+              val += Math.max(0, advance) * 18 + centerBonus;
+            } else if (p.type === "R" || p.type === "C" || p.type === "H") {
+              val += centerBonus;
+            }
+
+            if (p.side === aiSide) score += val;
+            else score -= val;
+          }
+        }
+        return score;
+      }
+
+      function jgOrderMoves(moves) {
+        return moves.sort((a, b) => {
+          const capA = a.captured ? (JG_VALUES[a.captured.type] || 0) * 10 - (JG_VALUES[a.piece.type] || 0) : 0;
+          const capB = b.captured ? (JG_VALUES[b.captured.type] || 0) * 10 - (JG_VALUES[b.piece.type] || 0) : 0;
+          return capB - capA;
+        });
+      }
+
+      function jgAlphaBeta(b, depth, alpha, beta, isMax, beam) {
+        const side = isMax ? aiSide : playerSide;
+        let moves = jgGetAllLegalMoves(b, side);
+
+        if (moves.length === 0) {
+          return isMax ? -90000 - depth * 1000 : 90000 + depth * 1000;
+        }
+        if (depth <= 0) {
+          return jgEvaluateBoard(b);
+        }
+
+        moves = jgOrderMoves(moves).slice(0, beam);
+
+        if (isMax) {
+          let maxEval = -Infinity;
+          for (const m of moves) {
+            const nextB = jgCloneBoard(b);
+            nextB[m.to.r][m.to.c] = nextB[m.from.r][m.from.c];
+            nextB[m.from.r][m.from.c] = null;
+
+            const ev = jgAlphaBeta(nextB, depth - 1, alpha, beta, false, beam);
+            if (ev > maxEval) maxEval = ev;
+            if (ev > alpha) alpha = ev;
+            if (beta <= alpha) break;
+          }
+          return maxEval;
+        } else {
+          let minEval = Infinity;
+          for (const m of moves) {
+            const nextB = jgCloneBoard(b);
+            nextB[m.to.r][m.to.c] = nextB[m.from.r][m.from.c];
+            nextB[m.from.r][m.from.c] = null;
+
+            const ev = jgAlphaBeta(nextB, depth - 1, alpha, beta, true, beam);
+            if (ev < minEval) minEval = ev;
+            if (ev < beta) beta = ev;
+            if (beta <= alpha) break;
+          }
+          return minEval;
+        }
+      }
+
+      function jgComputeAiMove(skill) {
+        let moves = jgGetAllLegalMoves(jgBoard, aiSide);
+        if (moves.length === 0) return { pass: true };
+
+        if (skill <= 0) {
+          return moves[Math.floor(Math.random() * moves.length)];
+        }
+
+        // 난이도(소수점 포함)에 따라 수읽기 깊이, 후보 폭, 노이즈 진폭 조절
+        const clamped = Math.min(skill, 10);
+        const depth = Math.max(1, Math.min(3, Math.floor(clamped / 2.5) + 1));
+        const beam = Math.max(6, Math.min(28, Math.round(6 + clamped * 2.2)));
+        const noiseScale = Math.max(0, 650 / Math.pow(skill + 0.5, 2.0));
+
+        moves = jgOrderMoves(moves).slice(0, beam);
+        let bestMove = moves[0];
+        let bestScore = -Infinity;
+        const t0 = performance.now();
+
+        for (const m of moves) {
+          const nextB = jgCloneBoard(jgBoard);
+          nextB[m.to.r][m.to.c] = nextB[m.from.r][m.from.c];
+          nextB[m.from.r][m.from.c] = null;
+
+          let sc = jgAlphaBeta(nextB, depth - 1, -Infinity, Infinity, false, Math.max(6, beam - 4));
+          // 장군 보너스
+          if (jgIsInCheck(nextB, playerSide)) sc += 65;
+
+          const jitter = noiseScale > 0 ? (Math.random() - 0.5) * noiseScale : 0;
+          if (sc + jitter > bestScore) {
+            bestScore = sc + jitter;
+            bestMove = m;
+          }
+
+          if (performance.now() - t0 > 650) break;
         }
 
         return bestMove;
       }
 
-      // AI 턴 실행
-      function triggerAiMove() {
-        if (gameOver || currentTurn !== aiColor) return;
+      // ==================== 통합 턴 제어 및 초기화 ====================
+
+      function triggerAiTurn() {
+        if (gameOver || currentTurn !== aiSide) return;
         isAiThinking = true;
 
         if (aiTimer) clearTimeout(aiTimer);
@@ -697,79 +1653,189 @@
             isAiThinking = false;
             return;
           }
-          const move = computeBestMove();
-          isAiThinking = false;
-          if (move) {
-            placeStone(move.r, move.c, aiColor);
+
+          const rawSkill = parseFloat(aiSkillInput.value);
+          const skill = Number.isNaN(rawSkill) ? 3.0 : rawSkill;
+
+          if (currentGame === "omok") {
+            const mv = omokComputeAiMove(skill);
+            isAiThinking = false;
+            if (mv) omokPlaceStone(mv.r, mv.c, aiSide);
+          } else if (currentGame === "go") {
+            const mv = goComputeAiMove(skill);
+            isAiThinking = false;
+            if (mv && mv.pass) {
+              handlePass(aiSide);
+            } else if (mv) {
+              goPlaceStone(mv.r, mv.c, aiSide);
+            }
+          } else if (currentGame === "janggi") {
+            const mv = jgComputeAiMove(skill);
+            isAiThinking = false;
+            if (mv && mv.pass) {
+              handlePass(aiSide);
+            } else if (mv) {
+              jgExecuteMove(mv.from, mv.to);
+            }
           }
-        }, 30);
+        }, 35);
       }
 
-      // 게임 초기화 및 시작/재시작
+      function handlePass(side) {
+        if (gameOver || currentTurn !== side) return;
+
+        if (currentGame === "go") {
+          goPrevBoardHash = "";
+          goConsecutivePasses++;
+          if (goConsecutivePasses >= 2) {
+            goFinishAndScore();
+            return;
+          }
+          currentTurn = side === SIDE_1 ? SIDE_2 : SIDE_1;
+          render();
+          if (currentTurn === aiSide) triggerAiTurn();
+        } else if (currentGame === "janggi") {
+          // 장군 상태에서는 한 수 쉼 불가
+          if (jgIsInCheck(jgBoard, side)) return;
+          jgSelected = null;
+          jgValidMoves = [];
+          jgConsecutivePasses++;
+          if (jgConsecutivePasses >= 2 || jgIsBikjang(jgBoard)) {
+            gameOver = true;
+            render();
+            showResult("무승부");
+            return;
+          }
+          currentTurn = side === SIDE_1 ? SIDE_2 : SIDE_1;
+          render();
+          if (currentTurn === aiSide) triggerAiTurn();
+        }
+      }
+
       function startGame() {
         if (aiTimer) {
           clearTimeout(aiTimer);
           aiTimer = null;
         }
 
-        board = Array.from({ length: GRID_COUNT }, () => Array(GRID_COUNT).fill(EMPTY));
-        winningLine = [];
+        currentGame = gameSelect.value;
+        updateSideLabels();
+        showResult("");
+
         gameOver = false;
         isAiThinking = false;
         hoverPos = null;
 
-        playerColor = parseInt(stoneColorSelect.value, 10) === WHITE ? WHITE : BLACK;
-        aiColor = playerColor === BLACK ? WHITE : BLACK;
-        currentTurn = BLACK; // 오목 규칙상 흑 선공
+        playerSide = parseInt(sideSelect.value, 10) === SIDE_2 ? SIDE_2 : SIDE_1;
+        aiSide = playerSide === SIDE_1 ? SIDE_2 : SIDE_1;
+        currentTurn = SIDE_1; // 오목/바둑은 흑 선공, 장기는 초 선공
+
+        if (currentGame === "janggi") {
+          jgBoard = jgCreateInitialBoard();
+          jgSelected = null;
+          jgValidMoves = [];
+          jgConsecutivePasses = 0;
+          jgLastMove = null;
+        } else {
+          grid19 = Array.from({ length: GO_SIZE }, () => Array(GO_SIZE).fill(EMPTY));
+          omokWinLine = [];
+          goPrevBoardHash = "";
+          goConsecutivePasses = 0;
+          goCapturedBy1 = 0;
+          goCapturedBy2 = 0;
+          goLastMove = null;
+        }
 
         applyBoardSize();
 
-        // 사용자가 백을 선택한 경우 AI(흑)가 먼저 착수
-        if (playerColor === WHITE) {
-          triggerAiMove();
+        if (playerSide === SIDE_2) {
+          triggerAiTurn();
         }
       }
 
-      // 이벤트 리스너 등록
+      // ==================== 이벤트 리스너 ====================
+
       canvas.addEventListener("mousemove", (e) => {
-        if (gameOver || isAiThinking || currentTurn !== playerColor) {
+        if (currentGame === "janggi" || gameOver || isAiThinking || currentTurn !== playerSide) {
           if (hoverPos !== null) {
             hoverPos = null;
-            drawBoard();
+            render();
           }
           return;
         }
-        const pos = getGridCoordFromEvent(e);
+        const pos = getCoordFromEvent(e);
         if (
           (pos && (!hoverPos || hoverPos.r !== pos.r || hoverPos.c !== pos.c)) ||
           (!pos && hoverPos !== null)
         ) {
           hoverPos = pos;
-          drawBoard();
+          render();
         }
       });
 
       canvas.addEventListener("mouseleave", () => {
         if (hoverPos !== null) {
           hoverPos = null;
-          drawBoard();
+          render();
         }
       });
 
       canvas.addEventListener("click", (e) => {
-        if (gameOver || isAiThinking || currentTurn !== playerColor) return;
-        const pos = getGridCoordFromEvent(e);
+        if (gameOver || isAiThinking || currentTurn !== playerSide) return;
+        const pos = getCoordFromEvent(e);
         if (!pos) return;
 
-        if (placeStone(pos.r, pos.c, playerColor)) {
-          hoverPos = null;
-          if (!gameOver) {
-            triggerAiMove();
+        if (currentGame === "omok") {
+          if (omokPlaceStone(pos.r, pos.c, playerSide)) {
+            hoverPos = null;
+            if (!gameOver) triggerAiTurn();
+          }
+        } else if (currentGame === "go") {
+          if (goPlaceStone(pos.r, pos.c, playerSide)) {
+            hoverPos = null;
+            if (!gameOver) triggerAiTurn();
+          }
+        } else if (currentGame === "janggi") {
+          const clickedPiece = jgBoard[pos.r][pos.c];
+
+          // 이미 기물을 선택한 상태에서 유효 이동 칸 클릭 시 착수
+          if (jgSelected) {
+            const isTargetValid = jgValidMoves.some((m) => m.r === pos.r && m.c === pos.c);
+            if (isTargetValid) {
+              if (jgExecuteMove(jgSelected, pos) && !gameOver) {
+                triggerAiTurn();
+              }
+              return;
+            }
+          }
+
+          // 내 기물 선택 / 재선택
+          if (clickedPiece && clickedPiece.side === playerSide) {
+            if (jgSelected && jgSelected.r === pos.r && jgSelected.c === pos.c) {
+              jgSelected = null;
+              jgValidMoves = [];
+            } else {
+              jgSelected = { r: pos.r, c: pos.c };
+              jgValidMoves = jgGetLegalMovesForPiece(jgBoard, pos.r, pos.c);
+            }
+            render();
+          } else {
+            jgSelected = null;
+            jgValidMoves = [];
+            render();
           }
         }
       });
 
-      // 바둑판 크기 입력 시 실시간 반영 (소수점 및 제한 없는 크기 지원)
+      gameSelect.addEventListener("change", () => {
+        startGame();
+      });
+
+      passBtn.addEventListener("click", () => {
+        if (gameOver || isAiThinking || currentTurn !== playerSide) return;
+        handlePass(playerSide);
+      });
+
       boardSizeInput.addEventListener("input", () => {
         applyBoardSize();
       });

@@ -1,998 +1,791 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>오목</title>
-    <style>
-        /* 전체 레이아웃: 순백색 배경, 불필요한 장식 완벽 배제 */
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Omok</title>
+  <style>
+    /* 순수 흑백(#FFFFFF, #000000) 미니멀 스타일 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-        html, body {
-            width: 100%;
-            height: 100%;
-            background-color: #ffffff;
-            color: #000000;
-            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
+    html, body {
+      width: 100%;
+      min-height: 100vh;
+      background-color: #ffffff;
+      color: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
 
-        /* 상단 미니멀 컨트롤 바: 시작/재시작, 돌 선택, 난이도 입력만 배치 */
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 16px;
-            padding: 0 12px;
-        }
+    /* 상단 컨트롤 바: 오직 요청된 4가지 요소만 배치 */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
 
-        /* 돌 선택 버튼 그룹 */
-        .stone-selector {
-            display: inline-flex;
-            border: 1.5px solid #000000;
-            border-radius: 6px;
-            overflow: hidden;
-        }
+    .field {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: #000000;
+    }
 
-        .stone-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 14px;
-            font-size: 14px;
-            font-weight: 600;
-            background-color: #ffffff;
-            color: #000000;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.15s, color 0.15s;
-        }
+    input[type="number"],
+    select,
+    button {
+      background-color: #ffffff;
+      color: #000000;
+      border: 1.5px solid #000000;
+      padding: 6px 10px;
+      font-size: 14px;
+      outline: none;
+      border-radius: 0;
+      height: 34px;
+    }
 
-        .stone-btn:first-child {
-            border-right: 1.5px solid #000000;
-        }
+    input[type="number"] {
+      width: 96px;
+    }
 
-        .stone-btn.active {
-            background-color: #000000;
-            color: #ffffff;
-        }
+    input[type="number"]::placeholder {
+      color: #000000;
+      opacity: 0.45;
+    }
 
-        /* 버튼 내부 미니 바둑돌 아이콘 */
-        .dot-black, .dot-white {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-        }
+    select {
+      cursor: pointer;
+    }
 
-        .dot-black {
-            background-color: #000000;
-            border: 1px solid #ffffff;
-        }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 6px 16px;
+      transition: background-color 0.1s, color 0.1s;
+    }
 
-        .stone-btn:not(.active) .dot-black {
-            border-color: #000000;
-        }
+    button:hover {
+      background-color: #000000;
+      color: #ffffff;
+    }
 
-        .dot-white {
-            background-color: #ffffff;
-            border: 1.5px solid #000000;
-        }
+    button:active {
+      background-color: #000000;
+      color: #ffffff;
+    }
 
-        /* 난이도 입력 영역 (크기 제한 없는 숫자 입력) */
-        .difficulty-group {
-            display: inline-flex;
-            align-items: center;
-            border: 1.5px solid #000000;
-            border-radius: 6px;
-            padding: 0 10px;
-            height: 36px;
-            background-color: #ffffff;
-        }
-
-        .difficulty-group label {
-            font-size: 14px;
-            font-weight: 600;
-            margin-right: 8px;
-            white-space: nowrap;
-        }
-
-        .difficulty-input {
-            width: 90px;
-            border: none;
-            outline: none;
-            font-size: 14px;
-            font-weight: 600;
-            color: #000000;
-            background: transparent;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-        }
-
-        /* 시작 / 재시작 버튼 */
-        .action-btn {
-            height: 36px;
-            padding: 0 18px;
-            font-size: 14px;
-            font-weight: 700;
-            background-color: #ffffff;
-            color: #000000;
-            border: 1.5px solid #000000;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.15s, color 0.15s;
-        }
-
-        .action-btn:hover {
-            background-color: #000000;
-            color: #ffffff;
-        }
-
-        .action-btn:active {
-            transform: scale(0.98);
-        }
-
-        /* 바둑판 컨테이너: 화면 크기에 맞춘 정사각형 반응형 비율 */
-        .board-wrapper {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: min(92vw, calc(100vh - 90px));
-            height: min(92vw, calc(100vh - 90px));
-        }
-
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            background-color: #ffffff;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-    </style>
+    /* 1:1 비율의 바둑판 캔버스 */
+    #board {
+      display: block;
+      background-color: #ffffff;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+  </style>
 </head>
 <body>
+  <!-- 바둑판 크기(px), AI 난이도, 돌 선택, 시작/재시작 버튼 -->
+  <div class="controls">
+    <label class="field" for="boardSizeInput">
+      <span>크기(px)</span>
+      <input
+        type="number"
+        id="boardSizeInput"
+        step="any"
+        value="500"
+        placeholder="크기(px)"
+        aria-label="크기(px)"
+      />
+    </label>
+    <label class="field" for="aiSkillInput">
+      <span>난이도</span>
+      <input
+        type="number"
+        id="aiSkillInput"
+        step="any"
+        value="3.0"
+        placeholder="난이도"
+        aria-label="난이도"
+      />
+    </label>
+    <select id="stoneColorSelect" aria-label="돌 선택">
+      <option value="1">● 흑</option>
+      <option value="2">○ 백</option>
+    </select>
+    <button id="startBtn" type="button">시작 / 재시작</button>
+  </div>
 
-    <!-- 오직 요구된 3가지 컨트롤: 돌 선택, 난이도 입력(무제한), 시작/재시작 -->
-    <div class="controls">
-        <div class="stone-selector" role="group" aria-label="돌 선택">
-            <button type="button" id="btnBlack" class="stone-btn active">
-                <span class="dot-black"></span>흑
-            </button>
-            <button type="button" id="btnWhite" class="stone-btn">
-                <span class="dot-white"></span>백
-            </button>
-        </div>
+  <canvas id="board"></canvas>
 
-        <div class="difficulty-group">
-            <label for="difficultyInput">난이도</label>
-            <input
-                type="text"
-                id="difficultyInput"
-                class="difficulty-input"
-                inputmode="numeric"
-                value="5"
-                placeholder="1~"
-                aria-label="난이도"
-            >
-        </div>
+  <script>
+    (() => {
+      const GRID_COUNT = 19; // 가로세로 19줄
+      const EMPTY = 0;
+      const BLACK = 1;
+      const WHITE = 2;
 
-        <button type="button" id="startBtn" class="action-btn">시작</button>
-    </div>
+      const canvas = document.getElementById("board");
+      const ctx = canvas.getContext("2d");
 
-    <!-- 하얀 배경에 검은 선이 있는 하얀 바둑판 -->
-    <div class="board-wrapper">
-        <canvas id="goban"></canvas>
-    </div>
+      const boardSizeInput = document.getElementById("boardSizeInput");
+      const aiSkillInput = document.getElementById("aiSkillInput");
+      const stoneColorSelect = document.getElementById("stoneColorSelect");
+      const startBtn = document.getElementById("startBtn");
 
-    <script>
-        /**
-         * 15x15 오목 게임 & 가변 지능형 AI 엔진
-         * - UI 제약 준수: 타이틀, 상태 메시지, 팝업, 점수판 일절 없음.
-         * - 난이도 입력: 자릿수 제한 없는 임의의 양의 정수(BigInt 파싱 후 안전 스케일링) 지원.
-         */
+      let board = Array.from({ length: GRID_COUNT }, () => Array(GRID_COUNT).fill(EMPTY));
+      let boardPixelSize = 500;
+      let playerColor = BLACK;
+      let aiColor = WHITE;
+      let currentTurn = BLACK;
+      let gameOver = false;
+      let isAiThinking = false;
+      let winningLine = [];
+      let hoverPos = null;
+      let aiTimer = null;
 
-        const BOARD_SIZE = 15;
-        const EMPTY = 0;
-        const BLACK = 1;
-        const WHITE = 2;
+      // 사용자 입력에 따른 바둑판 픽셀 크기 적용 (소수점 지원, 크기 제한 없음)
+      function applyBoardSize() {
+        const raw = parseFloat(boardSizeInput.value);
+        if (!Number.isNaN(raw) && raw > 0) {
+          boardPixelSize = raw;
+        }
+        const dpr = window.devicePixelRatio || 1;
+        canvas.style.width = `${boardPixelSize}px`;
+        canvas.style.height = `${boardPixelSize}px`;
+        canvas.width = Math.max(1, Math.round(boardPixelSize * dpr));
+        canvas.height = Math.max(1, Math.round(boardPixelSize * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawBoard();
+      }
 
-        // DOM 요소
-        const canvas = document.getElementById('goban');
-        const ctx = canvas.getContext('2d');
-        const btnBlack = document.getElementById('btnBlack');
-        const btnWhite = document.getElementById('btnWhite');
-        const difficultyInput = document.getElementById('difficultyInput');
-        const startBtn = document.getElementById('startBtn');
+      // 바둑판 및 돌 렌더링 (오직 #FFFFFF와 #000000만 사용)
+      function drawBoard() {
+        const size = boardPixelSize;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, size, size);
 
-        // 게임 상태 변수
-        let board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
-        let userColor = BLACK;
-        let aiColor = WHITE;
-        let currentTurn = BLACK;
-        let gameActive = false;
-        let hasStartedOnce = false;
-        let isAiThinking = false;
-        let lastMove = null;       // { r, c }
-        let hoverPos = null;       // { r, c }
-        let winningLine = [];      // [{ r, c }, ...]
+        if (size <= 0) return;
 
-        // 캔버스 기하학 계산 캐시
-        let cellSize = 0;
-        let padding = 0;
+        // 19줄 격자 여백 및 간격 계산
+        const padding = size / (GRID_COUNT + 1);
+        const step = (size - padding * 2) / (GRID_COUNT - 1);
 
-        // 방향 벡터 (가로, 세로, 우하향 대각선, 우상향 대각선)
-        const DIRECTIONS = [
-            [0, 1],
-            [1, 0],
-            [1, 1],
-            [1, -1]
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = Math.max(1, size / 540);
+
+        // 가로/세로 19줄 그리기
+        for (let i = 0; i < GRID_COUNT; i++) {
+          const pos = padding + i * step;
+
+          ctx.beginPath();
+          ctx.moveTo(padding, pos);
+          ctx.lineTo(size - padding, pos);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(pos, padding);
+          ctx.lineTo(pos, size - padding);
+          ctx.stroke();
+        }
+
+        // 19줄 바둑판 표준 화점 9개
+        const starCoords = [3, 9, 15];
+        const starRadius = Math.max(2, step * 0.11);
+        ctx.fillStyle = "#000000";
+        for (const r of starCoords) {
+          for (const c of starCoords) {
+            const cx = padding + c * step;
+            const cy = padding + r * step;
+            ctx.beginPath();
+            ctx.arc(cx, cy, starRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // 착수된 돌 그리기
+        const stoneRadius = step * 0.44;
+        for (let r = 0; r < GRID_COUNT; r++) {
+          for (let c = 0; c < GRID_COUNT; c++) {
+            const cell = board[r][c];
+            if (cell === EMPTY) continue;
+
+            const cx = padding + c * step;
+            const cy = padding + r * step;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, stoneRadius, 0, Math.PI * 2);
+
+            if (cell === BLACK) {
+              ctx.fillStyle = "#000000";
+              ctx.fill();
+            } else {
+              ctx.fillStyle = "#ffffff";
+              ctx.fill();
+              ctx.lineWidth = Math.max(1.2, size / 420);
+              ctx.strokeStyle = "#000000";
+              ctx.stroke();
+            }
+          }
+        }
+
+        // 승리한 5목 라인에 순수 흑백 대비 점 표시
+        if (winningLine.length > 0) {
+          const markRadius = Math.max(2, stoneRadius * 0.24);
+          for (const [r, c] of winningLine) {
+            const cx = padding + c * step;
+            const cy = padding + r * step;
+            ctx.beginPath();
+            ctx.arc(cx, cy, markRadius, 0, Math.PI * 2);
+            ctx.fillStyle = board[r][c] === BLACK ? "#ffffff" : "#000000";
+            ctx.fill();
+          }
+        }
+
+        // 마우스 호버 시 착수 위치 가이드 (흑백 외곽선)
+        if (!gameOver && !isAiThinking && currentTurn === playerColor && hoverPos) {
+          const { r, c } = hoverPos;
+          if (r >= 0 && r < GRID_COUNT && c >= 0 && c < GRID_COUNT && board[r][c] === EMPTY) {
+            const cx = padding + c * step;
+            const cy = padding + r * step;
+            ctx.beginPath();
+            ctx.arc(cx, cy, stoneRadius * 0.88, 0, Math.PI * 2);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "#000000";
+            ctx.stroke();
+          }
+        }
+      }
+
+      // 캔버스 좌표를 19x19 교차점 인덱스로 변환
+      function getGridCoordFromEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+
+        const scaleX = boardPixelSize / rect.width;
+        const scaleY = boardPixelSize / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        const padding = boardPixelSize / (GRID_COUNT + 1);
+        const step = (boardPixelSize - padding * 2) / (GRID_COUNT - 1);
+        if (step <= 0) return null;
+
+        const c = Math.round((x - padding) / step);
+        const r = Math.round((y - padding) / step);
+
+        if (r < 0 || r >= GRID_COUNT || c < 0 || c >= GRID_COUNT) return null;
+
+        const cx = padding + c * step;
+        const cy = padding + r * step;
+        const dist = Math.hypot(x - cx, y - cy);
+        if (dist > step * 0.48) return null;
+
+        return { r, c };
+      }
+
+      // 5목 승리 판정 (가로, 세로, 양 대각선)
+      function checkWin(r, c, color) {
+        const dirs = [
+          [0, 1],
+          [1, 0],
+          [1, 1],
+          [1, -1]
         ];
 
-        /**
-         * 난이도 입력값 파싱 (크기 제한 없는 문자열/숫자 처리)
-         * 사용자가 1부터 999999999999999999... 등 어떤 큰 수를 넣어도 안전하게 처리
-         */
-        function getDifficultyLevel() {
-            const raw = difficultyInput.value.replace(/[^0-9]/g, '');
-            if (!raw) return 1n;
-            try {
-                const val = BigInt(raw);
-                return val < 1n ? 1n : val;
-            } catch (e) {
-                return 1n;
-            }
+        for (const [dr, dc] of dirs) {
+          const line = [[r, c]];
+
+          let nr = r + dr;
+          let nc = c + dc;
+          while (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === color
+          ) {
+            line.push([nr, nc]);
+            nr += dr;
+            nc += dc;
+          }
+
+          nr = r - dr;
+          nc = c - dc;
+          while (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === color
+          ) {
+            line.unshift([nr, nc]);
+            nr -= dr;
+            nc -= dc;
+          }
+
+          if (line.length >= 5) {
+            return line;
+          }
+        }
+        return null;
+      }
+
+      function isBoardFull() {
+        for (let r = 0; r < GRID_COUNT; r++) {
+          for (let c = 0; c < GRID_COUNT; c++) {
+            if (board[r][c] === EMPTY) return false;
+          }
+        }
+        return true;
+      }
+
+      // 돌 착수 처리
+      function placeStone(r, c, color) {
+        if (gameOver || board[r][c] !== EMPTY) return false;
+
+        board[r][c] = color;
+        const win = checkWin(r, c, color);
+        if (win) {
+          winningLine = win;
+          gameOver = true;
+          drawBoard();
+          return true;
         }
 
-        // 입력창에 숫자만 유지하되 크기 제한은 두지 않음
-        difficultyInput.addEventListener('input', () => {
-            const cleaned = difficultyInput.value.replace(/[^0-9]/g, '');
-            if (difficultyInput.value !== cleaned) {
-                difficultyInput.value = cleaned;
-            }
-        });
-
-        // 돌 선택 이벤트
-        btnBlack.addEventListener('click', () => {
-            userColor = BLACK;
-            aiColor = WHITE;
-            btnBlack.classList.add('active');
-            btnWhite.classList.remove('active');
-            if (hasStartedOnce) {
-                startGame();
-            }
-        });
-
-        btnWhite.addEventListener('click', () => {
-            userColor = WHITE;
-            aiColor = BLACK;
-            btnWhite.classList.add('active');
-            btnBlack.classList.remove('active');
-            if (hasStartedOnce) {
-                startGame();
-            }
-        });
-
-        // 시작 / 재시작 버튼 이벤트
-        startBtn.addEventListener('click', () => {
-            startGame();
-        });
-
-        /**
-         * 새 게임 시작 또는 재시작
-         */
-        function startGame() {
-            board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
-            currentTurn = BLACK;
-            gameActive = true;
-            hasStartedOnce = true;
-            isAiThinking = false;
-            lastMove = null;
-            hoverPos = null;
-            winningLine = [];
-            startBtn.textContent = '재시작';
-
-            drawBoard();
-
-            // 사용자가 백을 선택한 경우 AI(흑)가 중앙(7, 7)에 첫 수 착수
-            if (userColor === WHITE) {
-                isAiThinking = true;
-                setTimeout(() => {
-                    if (!gameActive) return;
-                    placeStone(7, 7, BLACK);
-                    isAiThinking = false;
-                }, 120);
-            }
+        if (isBoardFull()) {
+          gameOver = true;
+          drawBoard();
+          return true;
         }
 
-        /**
-         * 고해상도(Retina) 대응 캔버스 크기 조정
-         */
-        function resizeCanvas() {
-            const wrapper = canvas.parentElement;
-            const rect = wrapper.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
+        currentTurn = color === BLACK ? WHITE : BLACK;
+        drawBoard();
+        return true;
+      }
 
-            canvas.width = Math.floor(rect.width * dpr);
-            canvas.height = Math.floor(rect.height * dpr);
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // ================= AI 엔진 (패턴 휴리스틱 + 알파-베타 탐색) =================
 
-            const size = rect.width;
-            padding = size / (BOARD_SIZE + 1);
-            cellSize = (size - padding * 2) / (BOARD_SIZE - 1);
+      const DIRECTIONS = [
+        [0, 1],
+        [1, 0],
+        [1, 1],
+        [1, -1]
+      ];
 
-            drawBoard();
+      // 특정 위치에 착수했을 때의 4방향 패턴 점수 계산
+      function evaluatePoint(r, c, color) {
+        let totalScore = 0;
+
+        for (const [dr, dc] of DIRECTIONS) {
+          let count = 1;
+          let openEnds = 0;
+
+          // 정방향 탐색
+          let nr = r + dr;
+          let nc = c + dc;
+          while (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === color
+          ) {
+            count++;
+            nr += dr;
+            nc += dc;
+          }
+          if (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === EMPTY
+          ) {
+            openEnds++;
+          }
+
+          // 역방향 탐색
+          nr = r - dr;
+          nc = c - dc;
+          while (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === color
+          ) {
+            count++;
+            nr -= dr;
+            nc -= dc;
+          }
+          if (
+            nr >= 0 && nr < GRID_COUNT &&
+            nc >= 0 && nc < GRID_COUNT &&
+            board[nr][nc] === EMPTY
+          ) {
+            openEnds++;
+          }
+
+          // 연속 돌 개수 및 열린 양끝에 따른 가중치
+          if (count >= 5) {
+            totalScore += 1000000;
+          } else if (count === 4) {
+            if (openEnds === 2) totalScore += 120000; // 열린 4
+            else if (openEnds === 1) totalScore += 18000; // 닫힌 4
+          } else if (count === 3) {
+            if (openEnds === 2) totalScore += 15000; // 열린 3
+            else if (openEnds === 1) totalScore += 1800; // 닫힌 3
+          } else if (count === 2) {
+            if (openEnds === 2) totalScore += 1200; // 열린 2
+            else if (openEnds === 1) totalScore += 150;
+          } else if (count === 1) {
+            if (openEnds === 2) totalScore += 40;
+          }
         }
 
-        window.addEventListener('resize', resizeCanvas);
+        // 중앙 지향 보너스
+        const centerDist = Math.abs(r - 9) + Math.abs(c - 9);
+        totalScore += Math.max(0, 18 - centerDist);
 
-        /**
-         * 순백색 바둑판과 검은 격자, 화점, 바둑돌 렌더링
-         */
-        function drawBoard() {
-            const wrapper = canvas.parentElement;
-            const size = wrapper.getBoundingClientRect().width;
+        return totalScore;
+      }
 
-            // 1. 하얀 배경 채우기
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, size, size);
+      // 현재 돌 주변(반경 2칸 이내)의 유효 후보 수 추출
+      function getCandidateMoves(maxCandidates) {
+        const candidates = [];
+        let hasStone = false;
 
-            // 2. 검은 격자선 그리기
-            ctx.strokeStyle = '#000000';
-            ctx.lineWidth = 1;
-
-            for (let i = 0; i < BOARD_SIZE; i++) {
-                const pos = Math.round(padding + i * cellSize) + 0.5;
-                const start = Math.round(padding) + 0.5;
-                const end = Math.round(padding + (BOARD_SIZE - 1) * cellSize) + 0.5;
-
-                // 가로선
-                ctx.beginPath();
-                ctx.moveTo(start, pos);
-                ctx.lineTo(end, pos);
-                ctx.stroke();
-
-                // 세로선
-                ctx.beginPath();
-                ctx.moveTo(pos, start);
-                ctx.lineTo(pos, end);
-                ctx.stroke();
+        for (let r = 0; r < GRID_COUNT; r++) {
+          for (let c = 0; c < GRID_COUNT; c++) {
+            if (board[r][c] !== EMPTY) {
+              hasStone = true;
+              break;
             }
-
-            // 바둑판 외곽선 약간 더 선명하게
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(
-                Math.round(padding) + 0.5,
-                Math.round(padding) + 0.5,
-                Math.round((BOARD_SIZE - 1) * cellSize),
-                Math.round((BOARD_SIZE - 1) * cellSize)
-            );
-
-            // 3. 표준 15x15 화점 (3, 7, 11 교차점)
-            const starCoords = [3, 7, 11];
-            ctx.fillStyle = '#000000';
-            for (const r of starCoords) {
-                for (const c of starCoords) {
-                    const x = padding + c * cellSize;
-                    const y = padding + r * cellSize;
-                    ctx.beginPath();
-                    ctx.arc(x, y, Math.max(2.5, cellSize * 0.1), 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-
-            // 4. 착수된 바둑돌 그리기
-            const stoneRadius = cellSize * 0.44;
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    const stone = board[r][c];
-                    if (stone === EMPTY) continue;
-
-                    const x = padding + c * cellSize;
-                    const y = padding + r * cellSize;
-
-                    ctx.beginPath();
-                    ctx.arc(x, y, stoneRadius, 0, Math.PI * 2);
-
-                    if (stone === BLACK) {
-                        ctx.fillStyle = '#000000';
-                        ctx.fill();
-                    } else {
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fill();
-                        ctx.lineWidth = 1.4;
-                        ctx.strokeStyle = '#000000';
-                        ctx.stroke();
-                    }
-                }
-            }
-
-            // 5. 마우스 호버 미리보기 (게임 진행 중일 때)
-            if (gameActive && !isAiThinking && currentTurn === userColor && hoverPos) {
-                const { r, c } = hoverPos;
-                if (board[r][c] === EMPTY) {
-                    const x = padding + c * cellSize;
-                    const y = padding + r * cellSize;
-                    ctx.beginPath();
-                    ctx.arc(x, y, stoneRadius * 0.85, 0, Math.PI * 2);
-                    if (userColor === BLACK) {
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-                        ctx.fill();
-                    } else {
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                        ctx.fill();
-                        ctx.lineWidth = 1;
-                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-                        ctx.stroke();
-                    }
-                }
-            }
-
-            // 6. 마지막 착수 위치 표시 (작은 점)
-            if (lastMove && winningLine.length === 0) {
-                const x = padding + lastMove.c * cellSize;
-                const y = padding + lastMove.r * cellSize;
-                const stone = board[lastMove.r][lastMove.c];
-                ctx.beginPath();
-                ctx.arc(x, y, Math.max(2.2, stoneRadius * 0.18), 0, Math.PI * 2);
-                ctx.fillStyle = stone === BLACK ? '#ffffff' : '#000000';
-                ctx.fill();
-            }
-
-            // 7. 승리한 5목 라인 강조 표시 (별도 텍스트 배너 없이 돌 위에 붉은 점 표시)
-            if (winningLine.length > 0) {
-                for (const pos of winningLine) {
-                    const x = padding + pos.c * cellSize;
-                    const y = padding + pos.r * cellSize;
-                    ctx.beginPath();
-                    ctx.arc(x, y, Math.max(3, stoneRadius * 0.24), 0, Math.PI * 2);
-                    ctx.fillStyle = '#e11d48';
-                    ctx.fill();
-                }
-            }
+          }
+          if (hasStone) break;
         }
 
-        /**
-         * 캔버스 좌표를 바둑판 (r, c) 인덱스로 변환
-         */
-        function getBoardCoordFromEvent(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            const x = clientX - rect.left;
-            const y = clientY - rect.top;
-
-            const c = Math.round((x - padding) / cellSize);
-            const r = Math.round((y - padding) / cellSize);
-
-            if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-                const centerX = padding + c * cellSize;
-                const centerY = padding + r * cellSize;
-                const dist = Math.hypot(x - centerX, y - centerY);
-                if (dist <= cellSize * 0.48) {
-                    return { r, c };
-                }
-            }
-            return null;
+        if (!hasStone) {
+          return [{ r: 9, c: 9, score: 100 }];
         }
 
-        // 마우스 이동 호버 처리
-        canvas.addEventListener('mousemove', (e) => {
-            if (!gameActive || isAiThinking || currentTurn !== userColor) {
-                if (hoverPos) {
-                    hoverPos = null;
-                    drawBoard();
+        for (let r = 0; r < GRID_COUNT; r++) {
+          for (let c = 0; c < GRID_COUNT; c++) {
+            if (board[r][c] !== EMPTY) continue;
+
+            let near = false;
+            for (let dr = -2; dr <= 2 && !near; dr++) {
+              for (let dc = -2; dc <= 2; dc++) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if (
+                  nr >= 0 && nr < GRID_COUNT &&
+                  nc >= 0 && nc < GRID_COUNT &&
+                  board[nr][nc] !== EMPTY
+                ) {
+                  near = true;
+                  break;
                 }
-                return;
-            }
-            const pos = getBoardCoordFromEvent(e);
-            if ((pos?.r !== hoverPos?.r) || (pos?.c !== hoverPos?.c)) {
-                hoverPos = pos;
-                drawBoard();
-            }
-        });
-
-        canvas.addEventListener('mouseleave', () => {
-            if (hoverPos) {
-                hoverPos = null;
-                drawBoard();
-            }
-        });
-
-        // 클릭 / 터치 착수 처리
-        canvas.addEventListener('click', (e) => {
-            // 게임 시작 전 보드를 클릭하면 자동으로 시작 후 첫 수 착수 편의 제공
-            if (!hasStartedOnce) {
-                startGame();
-                if (userColor === WHITE) return;
+              }
             }
 
-            if (!gameActive || isAiThinking || currentTurn !== userColor) return;
-
-            const pos = getBoardCoordFromEvent(e);
-            if (!pos) return;
-
-            const { r, c } = pos;
-            if (board[r][c] !== EMPTY) return;
-
-            placeStone(r, c, userColor);
-
-            // 게임이 끝나지 않았다면 AI 차례 실행
-            if (gameActive) {
-                isAiThinking = true;
-                setTimeout(() => {
-                    if (!gameActive) return;
-                    const aiMove = computeBestMove(aiColor, userColor);
-                    if (aiMove) {
-                        placeStone(aiMove.r, aiMove.c, aiColor);
-                    }
-                    isAiThinking = false;
-                }, 30);
+            if (near) {
+              const attack = evaluatePoint(r, c, aiColor);
+              const defend = evaluatePoint(r, c, playerColor);
+              // 공격과 방어 중 위협도가 높은 쪽을 우선 평가
+              const priority = Math.max(attack * 1.05, defend);
+              candidates.push({ r, c, score: priority, attack, defend });
             }
-        });
-
-        /**
-         * 돌 착수 및 승패/무승부 판정
-         */
-        function placeStone(r, c, color) {
-            board[r][c] = color;
-            lastMove = { r, c };
-            hoverPos = null;
-
-            const winCells = checkWin(r, c, color);
-            if (winCells) {
-                winningLine = winCells;
-                gameActive = false;
-                drawBoard();
-                return;
-            }
-
-            if (isBoardFull()) {
-                gameActive = false;
-                drawBoard();
-                return;
-            }
-
-            currentTurn = color === BLACK ? WHITE : BLACK;
-            drawBoard();
+          }
         }
 
-        /**
-         * 5목 달성 여부 확인 (승리 시 5개 좌표 배열 반환)
-         */
-        function checkWin(r, c, color) {
+        candidates.sort((a, b) => b.score - a.score);
+        return candidates.slice(0, maxCandidates);
+      }
+
+      // 전체 보드 상태 정적 평가 (AI 관점)
+      function evaluateBoardState() {
+        let aiTotal = 0;
+        let playerTotal = 0;
+
+        for (let r = 0; r < GRID_COUNT; r++) {
+          for (let c = 0; c < GRID_COUNT; c++) {
+            const cell = board[r][c];
+            if (cell === EMPTY) continue;
+
+            // 가로, 세로, 우하향, 좌하향 시작점 기준으로 중복 없이 평가
             for (const [dr, dc] of DIRECTIONS) {
-                const line = [{ r, c }];
+              const prevR = r - dr;
+              const prevC = c - dc;
+              if (
+                prevR >= 0 && prevR < GRID_COUNT &&
+                prevC >= 0 && prevC < GRID_COUNT &&
+                board[prevR][prevC] === cell
+              ) {
+                continue;
+              }
 
-                // 정방향 탐색
-                let nr = r + dr;
-                let nc = c + dc;
-                while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color) {
-                    line.push({ r: nr, c: nc });
-                    nr += dr;
-                    nc += dc;
-                }
-
-                // 역방향 탐색
-                nr = r - dr;
-                nc = c - dc;
-                while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color) {
-                    line.push({ r: nr, c: nc });
-                    nr -= dr;
-                    nc -= dc;
-                }
-
-                if (line.length >= 5) {
-                    return line;
-                }
-            }
-            return null;
-        }
-
-        function isBoardFull() {
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] === EMPTY) return false;
-                }
-            }
-            return true;
-        }
-
-        // ============================================================================
-        // 가변 지능형 오목 AI 엔진 (무제한 난이도 스케일링 + 반복 심화 알파-베타 탐색)
-        // ============================================================================
-
-        const PATTERN_SCORES = {
-            FIVE: 100000000,
-            OPEN_FOUR: 10000000,
-            CLOSED_FOUR: 1000000,
-            OPEN_THREE: 200000,
-            CLOSED_THREE: 15000,
-            OPEN_TWO: 4000,
-            CLOSED_TWO: 400,
-            ONE: 30
-        };
-
-        /**
-         * 사용자 입력 난이도(BigInt)에 따라 탐색 깊이, 시간 예산, 후보군 폭, 실수율을 동적 결정
-         */
-        function getAiParameters(levelBigInt) {
-            // 매우 큰 숫자도 안전하게 처리하기 위해 로그 스케일 및 상한 클램핑 적용
-            const isHuge = levelBigInt > 1000000n;
-            const lvl = isHuge ? 1000000 : Number(levelBigInt);
-
-            if (lvl === 1) {
-                return { maxDepth: 1, timeBudgetMs: 30, candidateLimit: 12, randomness: 0.45, useVcf: false };
-            } else if (lvl === 2) {
-                return { maxDepth: 1, timeBudgetMs: 50, candidateLimit: 15, randomness: 0.20, useVcf: false };
-            } else if (lvl <= 4) {
-                return { maxDepth: 2, timeBudgetMs: 120, candidateLimit: 16, randomness: 0.05, useVcf: true };
-            } else if (lvl <= 9) {
-                return { maxDepth: 4, timeBudgetMs: 300, candidateLimit: 18, randomness: 0, useVcf: true };
-            } else if (lvl <= 50) {
-                return { maxDepth: 6, timeBudgetMs: 650, candidateLimit: 20, randomness: 0, useVcf: true };
-            } else if (lvl <= 500) {
-                return { maxDepth: 8, timeBudgetMs: 1100, candidateLimit: 22, randomness: 0, useVcf: true };
-            } else {
-                // 수천, 수만, 수억 이상의 입력 시 브라우저 멈춤을 방지하면서 최대 깊이 반복 심화 탐색 수행
-                const extraTime = Math.min(1400, Math.floor(Math.log10(lvl) * 240));
-                return {
-                    maxDepth: 10,
-                    timeBudgetMs: 1100 + extraTime,
-                    candidateLimit: 24,
-                    randomness: 0,
-                    useVcf: true
-                };
-            }
-        }
-
-        /**
-         * 최적 착수 위치 계산 메인 함수
-         */
-        function computeBestMove(aiCol, humanCol) {
-            const level = getDifficultyLevel();
-            const params = getAiParameters(level);
-            const candidates = generateCandidates(aiCol, humanCol, params.candidateLimit);
-
-            if (candidates.length === 0) {
-                return { r: 7, c: 7 };
-            }
-
-            // 난이도 2 이상일 때 즉각적인 승리(5목) 또는 즉각적인 패배 방어(상대 5목 차단) 최우선 처리
-            if (params.useVcf) {
-                // 1) AI 즉시 승리 수 확인
-                for (const move of candidates) {
-                    board[move.r][move.c] = aiCol;
-                    const win = checkWin(move.r, move.c, aiCol);
-                    board[move.r][move.c] = EMPTY;
-                    if (win) return move;
-                }
-
-                // 2) 상대 즉시 승리 방어 수 확인
-                for (const move of candidates) {
-                    board[move.r][move.c] = humanCol;
-                    const oppWin = checkWin(move.r, move.c, humanCol);
-                    board[move.r][move.c] = EMPTY;
-                    if (oppWin) return move;
-                }
-
-                // 3) AI 열린 4(필승) 만들기 확인
-                for (const move of candidates) {
-                    if (evaluatePoint(move.r, move.c, aiCol) >= PATTERN_SCORES.OPEN_FOUR) {
-                        return move;
-                    }
-                }
-
-                // 4) 상대 열린 4 방어 확인
-                for (const move of candidates) {
-                    if (evaluatePoint(move.r, move.c, humanCol) >= PATTERN_SCORES.OPEN_FOUR) {
-                        return move;
-                    }
-                }
-            }
-
-            // 낮은 난이도(1~2): 휴리스틱 점수 기반 + 약간의 실수 반영
-            if (params.maxDepth === 1) {
-                const scored = candidates.map(m => {
-                    const attack = evaluatePoint(m.r, m.c, aiCol);
-                    const defense = evaluatePoint(m.r, m.c, humanCol);
-                    const noise = params.randomness > 0 ? (Math.random() * 6000 * params.randomness) : 0;
-                    return { move: m, score: attack * 1.05 + defense + noise };
-                });
-                scored.sort((a, b) => b.score - a.score);
-                return scored[0].move;
-            }
-
-            // 반복 심화(Iterative Deepening) + 알파-베타 가지치기 탐색
-            const startTime = performance.now();
-            let bestMove = candidates[0];
-            let timedOut = false;
-
-            function alphaBeta(depth, alpha, beta, isMaximizing) {
-                if (performance.now() - startTime > params.timeBudgetMs) {
-                    timedOut = true;
-                    return 0;
-                }
-
-                if (depth === 0) {
-                    return evaluateBoard(aiCol, humanCol);
-                }
-
-                const moves = generateCandidates(
-                    isMaximizing ? aiCol : humanCol,
-                    isMaximizing ? humanCol : aiCol,
-                    Math.max(10, params.candidateLimit - (params.maxDepth - depth) * 2)
-                );
-
-                if (moves.length === 0) return 0;
-
-                if (isMaximizing) {
-                    let maxEval = -Infinity;
-                    for (const m of moves) {
-                        board[m.r][m.c] = aiCol;
-                        if (checkWin(m.r, m.c, aiCol)) {
-                            board[m.r][m.c] = EMPTY;
-                            return PATTERN_SCORES.FIVE + depth * 10000;
-                        }
-                        const ev = alphaBeta(depth - 1, alpha, beta, false);
-                        board[m.r][m.c] = EMPTY;
-
-                        if (timedOut) return maxEval;
-                        if (ev > maxEval) maxEval = ev;
-                        if (ev > alpha) alpha = ev;
-                        if (beta <= alpha) break;
-                    }
-                    return maxEval;
-                } else {
-                    let minEval = Infinity;
-                    for (const m of moves) {
-                        board[m.r][m.c] = humanCol;
-                        if (checkWin(m.r, m.c, humanCol)) {
-                            board[m.r][m.c] = EMPTY;
-                            return -(PATTERN_SCORES.FIVE + depth * 10000);
-                        }
-                        const ev = alphaBeta(depth - 1, alpha, beta, true);
-                        board[m.r][m.c] = EMPTY;
-
-                        if (timedOut) return minEval;
-                        if (ev < minEval) minEval = ev;
-                        if (ev < beta) beta = ev;
-                        if (beta <= alpha) break;
-                    }
-                    return minEval;
-                }
-            }
-
-            // 깊이 2부터 목표 깊이까지 시간 제한 내에서 점진적으로 깊게 탐색
-            for (let currentDepth = 2; currentDepth <= params.maxDepth; currentDepth += 2) {
-                let currentBest = bestMove;
-                let bestScore = -Infinity;
-                let alpha = -Infinity;
-                const beta = Infinity;
-
-                for (const m of candidates) {
-                    board[m.r][m.c] = aiCol;
-                    const score = alphaBeta(currentDepth - 1, alpha, beta, false);
-                    board[m.r][m.c] = EMPTY;
-
-                    if (timedOut) break;
-
-                    if (score > bestScore) {
-                        bestScore = score;
-                        currentBest = m;
-                    }
-                    if (score > alpha) {
-                        alpha = score;
-                    }
-                }
-
-                if (!timedOut) {
-                    bestMove = currentBest;
-                    // 필승 수순 발견 시 조기 종료
-                    if (bestScore >= PATTERN_SCORES.FIVE / 2) break;
-                } else {
-                    break;
-                }
-            }
-
-            return bestMove;
-        }
-
-        /**
-         * 기존 돌 주변 반경 2칸 이내의 유망한 빈칸 후보 생성 및 휴리스틱 정렬
-         */
-        function generateCandidates(myColor, oppColor, limit) {
-            const visited = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(false));
-            const list = [];
-            let hasStone = false;
-
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    if (board[r][c] !== EMPTY) {
-                        hasStone = true;
-                        for (let dr = -2; dr <= 2; dr++) {
-                            for (let dc = -2; dc <= 2; dc++) {
-                                const nr = r + dr;
-                                const nc = c + dc;
-                                if (
-                                    nr >= 0 && nr < BOARD_SIZE &&
-                                    nc >= 0 && nc < BOARD_SIZE &&
-                                    board[nr][nc] === EMPTY &&
-                                    !visited[nr][nc]
-                                ) {
-                                    visited[nr][nc] = true;
-                                    const myScore = evaluatePoint(nr, nc, myColor);
-                                    const oppScore = evaluatePoint(nr, nc, oppColor);
-                                    // 중앙 선호 미세 가중치
-                                    const centerBonus = (14 - (Math.abs(nr - 7) + Math.abs(nc - 7))) * 2;
-                                    list.push({
-                                        r: nr,
-                                        c: nc,
-                                        priority: myScore * 1.1 + oppScore + centerBonus
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (!hasStone) {
-                return [{ r: 7, c: 7, priority: 100 }];
-            }
-
-            list.sort((a, b) => b.priority - a.priority);
-            return list.slice(0, limit);
-        }
-
-        /**
-         * 특정 좌표 (r, c)에 color 돌을 놓았을 때 4방향 위협도 평가
-         */
-        function evaluatePoint(r, c, color) {
-            let total = 0;
-            let openThrees = 0;
-            let fours = 0;
-
-            for (const [dr, dc] of DIRECTIONS) {
-                const pattern = analyzeDirection(r, c, dr, dc, color);
-                total += pattern.score;
-                if (pattern.type === 'OPEN_THREE') openThrees++;
-                if (pattern.type === 'OPEN_FOUR' || pattern.type === 'CLOSED_FOUR') fours++;
-            }
-
-            // 쌍삼(Double Three) 및 사삼(Four-Three) 보너스 가중치
-            if (fours >= 1 && openThrees >= 1) total += PATTERN_SCORES.OPEN_FOUR * 0.8;
-            if (openThrees >= 2) total += PATTERN_SCORES.OPEN_FOUR * 0.6;
-
-            return total;
-        }
-
-        /**
-         * 한 방향(dr, dc)에 대한 연속 돌 및 양끝 열림 여부 분석
-         */
-        function analyzeDirection(r, c, dr, dc, color) {
-            let count = 1;
-            let openEnds = 0;
-
-            // 정방향
-            let nr = r + dr;
-            let nc = c + dc;
-            while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color) {
+              let count = 0;
+              let nr = r;
+              let nc = c;
+              while (
+                nr >= 0 && nr < GRID_COUNT &&
+                nc >= 0 && nc < GRID_COUNT &&
+                board[nr][nc] === cell
+              ) {
                 count++;
                 nr += dr;
                 nc += dc;
-            }
-            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
+              }
+
+              let openEnds = 0;
+              if (
+                prevR >= 0 && prevR < GRID_COUNT &&
+                prevC >= 0 && prevC < GRID_COUNT &&
+                board[prevR][prevC] === EMPTY
+              ) {
                 openEnds++;
-            }
-
-            // 역방향
-            nr = r - dr;
-            nc = c - dc;
-            while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color) {
-                count++;
-                nr -= dr;
-                nc -= dc;
-            }
-            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
+              }
+              if (
+                nr >= 0 && nr < GRID_COUNT &&
+                nc >= 0 && nc < GRID_COUNT &&
+                board[nr][nc] === EMPTY
+              ) {
                 openEnds++;
-            }
+              }
 
-            if (count >= 5) return { score: PATTERN_SCORES.FIVE, type: 'FIVE' };
-            if (count === 4) {
-                if (openEnds === 2) return { score: PATTERN_SCORES.OPEN_FOUR, type: 'OPEN_FOUR' };
-                if (openEnds === 1) return { score: PATTERN_SCORES.CLOSED_FOUR, type: 'CLOSED_FOUR' };
-            }
-            if (count === 3) {
-                if (openEnds === 2) return { score: PATTERN_SCORES.OPEN_THREE, type: 'OPEN_THREE' };
-                if (openEnds === 1) return { score: PATTERN_SCORES.CLOSED_THREE, type: 'CLOSED_THREE' };
-            }
-            if (count === 2) {
-                if (openEnds === 2) return { score: PATTERN_SCORES.OPEN_TWO, type: 'OPEN_TWO' };
-                if (openEnds === 1) return { score: PATTERN_SCORES.CLOSED_TWO, type: 'CLOSED_TWO' };
-            }
-            if (count === 1 && openEnds === 2) {
-                return { score: PATTERN_SCORES.ONE, type: 'ONE' };
-            }
+              let val = 0;
+              if (count >= 5) val = 1000000;
+              else if (count === 4) val = openEnds === 2 ? 120000 : openEnds === 1 ? 15000 : 0;
+              else if (count === 3) val = openEnds === 2 ? 12000 : openEnds === 1 ? 1200 : 0;
+              else if (count === 2) val = openEnds === 2 ? 800 : openEnds === 1 ? 100 : 0;
 
-            return { score: 0, type: 'NONE' };
+              if (cell === aiColor) aiTotal += val;
+              else playerTotal += val * 1.1; // 상대 위협 방어 가중치
+            }
+          }
         }
 
-        /**
-         * 전체 바둑판 상태 정적 평가 (AI 점수 - 사용자 점수)
-         */
-        function evaluateBoard(aiCol, humanCol) {
-            let aiTotal = 0;
-            let humanTotal = 0;
+        return aiTotal - playerTotal;
+      }
 
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
-                    const cell = board[r][c];
-                    if (cell === EMPTY) continue;
-
-                    // 4방향 중복 방지를 위해 각 선분의 시작점 또는 대표 평가 수행
-                    for (const [dr, dc] of DIRECTIONS) {
-                        const prevR = r - dr;
-                        const prevC = c - dc;
-                        // 같은 색 돌의 연속 시작점일 때만 평가
-                        if (
-                            prevR >= 0 && prevR < BOARD_SIZE &&
-                            prevC >= 0 && prevC < BOARD_SIZE &&
-                            board[prevR][prevC] === cell
-                        ) {
-                            continue;
-                        }
-
-                        let count = 0;
-                        let nr = r;
-                        let nc = c;
-                        while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === cell) {
-                            count++;
-                            nr += dr;
-                            nc += dc;
-                        }
-
-                        let openEnds = 0;
-                        if (prevR >= 0 && prevR < BOARD_SIZE && prevC >= 0 && prevC < BOARD_SIZE && board[prevR][prevC] === EMPTY) {
-                            openEnds++;
-                        }
-                        if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === EMPTY) {
-                            openEnds++;
-                        }
-
-                        let segScore = 0;
-                        if (count >= 5) segScore = PATTERN_SCORES.FIVE;
-                        else if (count === 4) segScore = openEnds === 2 ? PATTERN_SCORES.OPEN_FOUR : (openEnds === 1 ? PATTERN_SCORES.CLOSED_FOUR : 0);
-                        else if (count === 3) segScore = openEnds === 2 ? PATTERN_SCORES.OPEN_THREE : (openEnds === 1 ? PATTERN_SCORES.CLOSED_THREE : 0);
-                        else if (count === 2) segScore = openEnds === 2 ? PATTERN_SCORES.OPEN_TWO : (openEnds === 1 ? PATTERN_SCORES.CLOSED_TWO : 0);
-                        else if (count === 1 && openEnds === 2) segScore = PATTERN_SCORES.ONE;
-
-                        if (cell === aiCol) aiTotal += segScore;
-                        else humanTotal += segScore;
-                    }
-                }
-            }
-
-            // 방어 가중치를 약간 높게 반영하여 상대의 열린 3/4 위협을 철저히 차단
-            return aiTotal - humanTotal * 1.15;
+      // 알파-베타 가지치기 미니맥스 탐색
+      function alphaBeta(depth, alpha, beta, maximizingPlayer, beamWidth) {
+        if (depth <= 0) {
+          return evaluateBoardState();
         }
 
-        // 초기 바둑판 렌더링
-        window.onload = function () {
-            resizeCanvas();
-        };
-    </script>
+        const moves = getCandidateMoves(beamWidth);
+        if (moves.length === 0) return 0;
+
+        if (maximizingPlayer) {
+          let maxEval = -Infinity;
+          for (const move of moves) {
+            board[move.r][move.c] = aiColor;
+            if (checkWin(move.r, move.c, aiColor)) {
+              board[move.r][move.c] = EMPTY;
+              return 1000000 + depth * 10000;
+            }
+            const evalScore = alphaBeta(depth - 1, alpha, beta, false, beamWidth);
+            board[move.r][move.c] = EMPTY;
+
+            if (evalScore > maxEval) maxEval = evalScore;
+            if (evalScore > alpha) alpha = evalScore;
+            if (beta <= alpha) break;
+          }
+          return maxEval;
+        } else {
+          let minEval = Infinity;
+          for (const move of moves) {
+            board[move.r][move.c] = playerColor;
+            if (checkWin(move.r, move.c, playerColor)) {
+              board[move.r][move.c] = EMPTY;
+              return -1000000 - depth * 10000;
+            }
+            const evalScore = alphaBeta(depth - 1, alpha, beta, true, beamWidth);
+            board[move.r][move.c] = EMPTY;
+
+            if (evalScore < minEval) minEval = evalScore;
+            if (evalScore < beta) beta = evalScore;
+            if (beta <= alpha) break;
+          }
+          return minEval;
+        }
+      }
+
+      // 사용자 입력 실력(소수점 및 임의 크기 지원)에 따른 AI 최적 수 계산
+      function computeBestMove() {
+        const rawSkill = parseFloat(aiSkillInput.value);
+        const skill = Number.isNaN(rawSkill) ? 3 : rawSkill;
+
+        // 즉시 승리 또는 즉시 패배 방어 수 최우선 탐색
+        const allCandidates = getCandidateMoves(30);
+        if (allCandidates.length === 0) return null;
+
+        // AI 난이도가 매우 낮을 때(0 이하 또는 1 미만) 랜덤성/실수율 적용
+        if (skill <= 0) {
+          const idx = Math.floor(Math.random() * allCandidates.length);
+          return allCandidates[idx];
+        }
+
+        // 즉시 5목 완성 수 확인 (실력 1.5 이상일 때 정확히 포착)
+        if (skill >= 1.5) {
+          for (const m of allCandidates) {
+            if (m.attack >= 1000000) return m;
+          }
+          for (const m of allCandidates) {
+            if (m.defend >= 1000000) return m;
+          }
+        }
+
+        // 실력 수치(소수점 포함)에 따라 탐색 깊이, 후보군 폭, 노이즈 스케일링
+        // 프리즈 방지를 위해 실질 탐색 깊이는 합리적 상한을 두되 소수점 단위로 정밀도 연속 조절
+        const clampedSkill = Math.min(skill, 12);
+        const depth = Math.max(1, Math.min(4, Math.floor(clampedSkill / 2.2) + 1));
+        const beamWidth = Math.max(4, Math.min(18, Math.round(4 + clampedSkill * 1.4)));
+        // 소수점 차이가 평가 정밀도에 즉각 반영되도록 노이즈 진폭 계산
+        const noiseScale = Math.max(0, 25000 / Math.pow(skill + 0.5, 2.2));
+
+        const topMoves = allCandidates.slice(0, beamWidth);
+        let bestMove = topMoves[0];
+        let bestScore = -Infinity;
+
+        const startTime = performance.now();
+        const timeBudgetMs = 650; // 브라우저 응답성 유지용 시간 제한
+
+        for (const move of topMoves) {
+          board[move.r][move.c] = aiColor;
+
+          let score;
+          if (checkWin(move.r, move.c, aiColor)) {
+            score = 2000000;
+          } else if (depth <= 1) {
+            score = evaluateBoardState() + move.score * 0.25;
+          } else {
+            score = alphaBeta(depth - 1, -Infinity, Infinity, false, Math.max(4, beamWidth - 4));
+          }
+
+          board[move.r][move.c] = EMPTY;
+
+          // 난이도 수치에 반비례하는 미세 노이즈 추가
+          const jitter = noiseScale > 0 ? (Math.random() - 0.5) * noiseScale : 0;
+          const finalScore = score + jitter;
+
+          if (finalScore > bestScore) {
+            bestScore = finalScore;
+            bestMove = move;
+          }
+
+          if (performance.now() - startTime > timeBudgetMs) {
+            break;
+          }
+        }
+
+        return bestMove;
+      }
+
+      // AI 턴 실행
+      function triggerAiMove() {
+        if (gameOver || currentTurn !== aiColor) return;
+        isAiThinking = true;
+
+        if (aiTimer) clearTimeout(aiTimer);
+        aiTimer = setTimeout(() => {
+          if (gameOver) {
+            isAiThinking = false;
+            return;
+          }
+          const move = computeBestMove();
+          isAiThinking = false;
+          if (move) {
+            placeStone(move.r, move.c, aiColor);
+          }
+        }, 30);
+      }
+
+      // 게임 초기화 및 시작/재시작
+      function startGame() {
+        if (aiTimer) {
+          clearTimeout(aiTimer);
+          aiTimer = null;
+        }
+
+        board = Array.from({ length: GRID_COUNT }, () => Array(GRID_COUNT).fill(EMPTY));
+        winningLine = [];
+        gameOver = false;
+        isAiThinking = false;
+        hoverPos = null;
+
+        playerColor = parseInt(stoneColorSelect.value, 10) === WHITE ? WHITE : BLACK;
+        aiColor = playerColor === BLACK ? WHITE : BLACK;
+        currentTurn = BLACK; // 오목 규칙상 흑 선공
+
+        applyBoardSize();
+
+        // 사용자가 백을 선택한 경우 AI(흑)가 먼저 착수
+        if (playerColor === WHITE) {
+          triggerAiMove();
+        }
+      }
+
+      // 이벤트 리스너 등록
+      canvas.addEventListener("mousemove", (e) => {
+        if (gameOver || isAiThinking || currentTurn !== playerColor) {
+          if (hoverPos !== null) {
+            hoverPos = null;
+            drawBoard();
+          }
+          return;
+        }
+        const pos = getGridCoordFromEvent(e);
+        if (
+          (pos && (!hoverPos || hoverPos.r !== pos.r || hoverPos.c !== pos.c)) ||
+          (!pos && hoverPos !== null)
+        ) {
+          hoverPos = pos;
+          drawBoard();
+        }
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        if (hoverPos !== null) {
+          hoverPos = null;
+          drawBoard();
+        }
+      });
+
+      canvas.addEventListener("click", (e) => {
+        if (gameOver || isAiThinking || currentTurn !== playerColor) return;
+        const pos = getGridCoordFromEvent(e);
+        if (!pos) return;
+
+        if (placeStone(pos.r, pos.c, playerColor)) {
+          hoverPos = null;
+          if (!gameOver) {
+            triggerAiMove();
+          }
+        }
+      });
+
+      // 바둑판 크기 입력 시 실시간 반영 (소수점 및 제한 없는 크기 지원)
+      boardSizeInput.addEventListener("input", () => {
+        applyBoardSize();
+      });
+
+      startBtn.addEventListener("click", () => {
+        startGame();
+      });
+
+      window.addEventListener("resize", () => {
+        applyBoardSize();
+      });
+
+      window.onload = () => {
+        startGame();
+      };
+    })();
+  </script>
 </body>
 </html>
